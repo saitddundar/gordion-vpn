@@ -1,0 +1,52 @@
+syntax = "proto3";
+
+package config.v1;
+
+option go_package = "github.com/saitddundar/gordion-vpn/pkg/proto/config/v1;configv1";
+
+// Config Service - Network configuration & IP allocation
+service ConfigService {
+  // Get network configuration
+  rpc GetConfig(GetConfigRequest) returns (GetConfigResponse);
+  
+  // Request IP address allocation
+  rpc RequestIP(RequestIPRequest) returns (RequestIPResponse);
+  
+  // Release IP address
+  rpc ReleaseIP(ReleaseIPRequest) returns (ReleaseIPResponse);
+}
+
+// GetConfig Messages
+message GetConfigRequest {
+  string token = 1;         // Auth token
+}
+
+message GetConfigResponse {
+  string network_cidr = 1;  // VPN network CIDR (e.g., "10.8.0.0/16")
+  int32 mtu = 2;            // Maximum transmission unit
+  repeated string dns_servers = 3;  // DNS servers for VPN
+}
+
+// RequestIP Messages
+message RequestIPRequest {
+  string token = 1;         // Auth token
+  string node_id = 2;       // Node requesting IP
+}
+
+message RequestIPResponse {
+  string ip_address = 1;    // Allocated IP (e.g., "10.8.0.5")
+  string subnet_mask = 2;   // Subnet mask
+  string gateway = 3;       // Gateway IP
+}
+
+// ReleaseIP Messages
+message ReleaseIPRequest {
+  string token = 1;         // Auth token
+  string node_id = 2;       // Node releasing IP
+  string ip_address = 3;    // IP to release
+}
+
+message ReleaseIPResponse {
+  bool success = 1;
+  string message = 2;
+}

@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package identity.v1;
+
+option go_package = "github.com/saitddundar/gordion-vpn/pkg/proto/identity/v1;identityv1";
+
+// Identity Service - Node authentication & key management
+service IdentityService {
+  // Register a new node
+  rpc RegisterNode(RegisterNodeRequest) returns (RegisterNodeResponse);
+  
+  // Validate auth token
+  rpc ValidateToken(ValidateTokenRequest) returns (ValidateTokenResponse);
+  
+  // Get public key of a node
+  rpc GetPublicKey(GetPublicKeyRequest) returns (GetPublicKeyResponse);
+}
+
+// RegisterNode Messages
+message RegisterNodeRequest {
+  string public_key = 1;  // Node's Ed25519 public key (hex format)
+  string version = 2;     // Agent version (semantic versioning)
+}
+
+message RegisterNodeResponse {
+  string node_id = 1;     // Assigned unique node ID
+  string token = 2;       // JWT authentication token
+  int64 expires_at = 3;   // Token expiry timestamp (unix)
+}
+
+// ValidateToken Messages
+message ValidateTokenRequest {
+  string token = 1;       // JWT token to validate
+}
+
+message ValidateTokenResponse {
+  bool valid = 1;         // Is token valid?
+  string node_id = 2;     // Node ID if valid
+}
+
+// GetPublicKey Messages
+message GetPublicKeyRequest {
+  string node_id = 1;     // Node ID to lookup
+}
+
+message GetPublicKeyResponse {
+  string public_key = 1;  // Node's public key
+}

@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+package discovery.v1;
+
+option go_package = "github.com/saitddundar/gordion-vpn/pkg/proto/discovery/v1;discoveryv1";
+
+// Discovery Service - Peer discovery & matching
+service DiscoveryService {
+  // List available peers
+  rpc ListPeers(ListPeersRequest) returns (ListPeersResponse);
+  
+  // Register this node as available peer
+  rpc RegisterPeer(RegisterPeerRequest) returns (RegisterPeerResponse);
+  
+  // Send heartbeat to keep peer alive
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+}
+
+// Peer info
+message Peer {
+  string node_id = 1;       // Node ID
+  string ip_address = 2;    // Public IP address
+  int32 port = 3;           // Listen port
+  string region = 4;        // Geographic region (e.g., "eu-west")
+  int64 bandwidth = 5;      // Available bandwidth (bytes/sec)
+  int64 last_seen = 6;      // Last heartbeat timestamp
+}
+
+// ListPeers Messages
+message ListPeersRequest {
+  string region = 1;        // Filter by region (optional)
+  int32 limit = 2;          // Max peers to return (default: 10)
+}
+
+message ListPeersResponse {
+  repeated Peer peers = 1;  // List of available peers
+}
+
+// RegisterPeer Messages
+message RegisterPeerRequest {
+  string token = 1;         // Auth token from Identity Service
+  string ip_address = 2;    // This node's public IP
+  int32 port = 3;           // Listen port
+  string region = 4;        // Geographic region
+  int64 bandwidth = 5;      // Available bandwidth
+}
+
+message RegisterPeerResponse {
+  bool success = 1;
+  string message = 2;       // Error message if failed
+}
+
+// Heartbeat Messages
+message HeartbeatRequest {
+  string token = 1;         // Auth token
+  int64 bandwidth = 2;      // Current available bandwidth
+}
+
+message HeartbeatResponse {
+  bool success = 1;
+  int64 ttl = 2;            // Time to live (seconds until next heartbeat)
+}
