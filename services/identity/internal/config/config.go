@@ -75,7 +75,7 @@ func (c *Config) Validate() error {
 	}
 
 	if c.TokenDuration == 0 {
-		c.TokenDuration = 24 // default 24 hours
+		c.TokenDuration = 24
 	}
 
 	return nil
