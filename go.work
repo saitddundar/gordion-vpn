@@ -3,5 +3,6 @@ go 1.25.4
 use (
 	.
 	./pkg/logger
+	./pkg/metrics
 	./services/identity
 )
