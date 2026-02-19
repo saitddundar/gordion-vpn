@@ -1,137 +1,151 @@
-# 🔐 Gordion VPN
+# Gordion VPN
 
 A decentralized, peer-to-peer VPN built with microservices architecture and WireGuard.
 
-## 🎯 Overview
+## Overview
 
-Gordion VPN is a next-generation decentralized VPN that turns users into both clients and relay nodes. Built with a modern microservices architecture, it provides secure, scalable, and distributed VPN connectivity.
+Gordion VPN is a decentralized VPN that turns users into both clients and relay nodes. Built with a modern microservices architecture, it provides secure, scalable, and distributed VPN connectivity.
 
-## 🏗️ Architecture
+## Architecture
 
 ### Control Plane (Microservices)
 
-- **Identity Service** ✅ - Node authentication & JWT-based key management
-- **Discovery Service** 🔄 - Peer discovery & matching (Coming soon)
-- **Config Service** 🔄 - Network configuration & IP allocation (Coming soon)
+| Service | Status | Description |
+|---------|--------|-------------|
+| **Identity Service** | Complete | Node authentication, JWT token management |
+| **Discovery Service** | Complete | Peer discovery, registration, heartbeat |
+| **Config Service** | Planned | Network configuration, IP allocation |
 
 ### Data Plane
 
-- **Agent** 🔄 - VPN client/relay node using libp2p and WireGuard (Coming soon)
+| Component | Status | Description |
+|-----------|--------|-------------|
+| **Agent** | Planned | VPN client/relay node (libp2p + WireGuard) |
 
-### Monitoring Stack
+### Monitoring
 
-- **Prometheus** ✅ - Metrics collection
-- **Grafana** ✅ - Metrics visualization
+| Tool | Status | Description |
+|------|--------|-------------|
+| **Prometheus** | Complete | Metrics collection |
+| **Grafana** | Complete | Metrics visualization |
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 gordion-vpn/
-├── services/              # Microservices
-│   └── identity/          # Identity service ✅
-│       ├── cmd/           # Entry points
-│       ├── internal/      # Service logic
-│       ├── migrations/    # Database migrations
-│       └── test/          # Integration tests
-├── pkg/                   # Shared libraries
-│   ├── logger/            # Structured logging
-│   ├── config/            # Configuration management
-│   ├── metrics/           # Prometheus metrics
-│   ├── grpcutil/          # gRPC utilities
-│   └── proto/             # Generated proto code
-├── api/proto/             # Protocol definitions
-│   ├── identity/v1/       # Identity service API
-│   ├── discovery/v1/      # Discovery service API
-│   └── config/v1/         # Config service API
-├── deployments/           # Docker & K8s configs
-│   ├── docker-compose.dev.yml
-│   └── prometheus.yml
-├── configs/               # Service configurations
-│   └── identity.dev.yaml
-└── scripts/               # Build & utility scripts
-    └── proto-gen.ps1      # Proto code generation
+├── services/
+│   ├── identity/              # Identity service
+│   │   ├── cmd/server/        # Entry point
+│   │   ├── internal/          # Config, storage, service, gRPC handler
+│   │   ├── migrations/        # Database migrations
+│   │   └── test/              # Integration tests
+│   └── discovery/             # Discovery service
+│       ├── cmd/server/        # Entry point
+│       ├── internal/          # Config, registry, matcher, gRPC handler
+│       └── test/              # Integration tests
+├── pkg/
+│   ├── logger/                # Structured logging (zerolog)
+│   ├── config/                # Configuration management
+│   ├── metrics/               # Prometheus metrics
+│   ├── grpcutil/              # gRPC error utilities
+│   └── proto/                 # Generated protobuf code
+├── api/proto/                 # Protocol Buffer definitions
+│   ├── identity/v1/
+│   ├── discovery/v1/
+│   └── config/v1/
+├── deployments/               # Docker Compose, Prometheus config
+├── configs/                   # Service configuration files
+└── scripts/                   # Build and utility scripts
 ```
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 
 - Go 1.21+
-- Docker & Docker Compose
-- PostgreSQL 15+ (via Docker)
+- Docker and Docker Compose
 - Protocol Buffers compiler (`protoc`)
 
 ### Quick Start
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/saitddundar/gordion-vpn.git
-   cd gordion-vpn
-   ```
+```bash
+# Clone the repository
+git clone https://github.com/saitddundar/gordion-vpn.git
+cd gordion-vpn
 
-2. **Start infrastructure (PostgreSQL, Redis, Prometheus, Grafana):**
-   ```bash
-   docker-compose -f deployments/docker-compose.dev.yml up -d
-   ```
+# Start infrastructure
+docker-compose -f deployments/docker-compose.dev.yml up -d
 
-3. **Run database migrations:**
-   ```bash
-   # Connect to PostgreSQL
-   docker exec -i gordion-postgres psql -U gordion -d gordion < services/identity/migrations/0001_initial.sql
-   ```
+# Run database migrations
+docker exec -i gordion-postgres psql -U gordion -d gordion \
+  < services/identity/migrations/0001_initial.sql
 
-4. **Start Identity Service:**
-   ```bash
-   cd services/identity
-   go run ./cmd/server
-   ```
+# Start Identity Service
+cd services/identity
+go run ./cmd/server
 
-5. **Verify service is running:**
-   ```bash
-   # Check gRPC endpoint
-   curl http://localhost:8001
+# Start Discovery Service (separate terminal)
+cd services/discovery
+go run ./cmd/server
+```
 
-   # Check metrics endpoint
-   curl http://localhost:9090/metrics
-   ```
-
-## 🧪 Testing
-
-### Run Integration Tests
+### Verify Services
 
 ```bash
+# Identity Service - gRPC on :8001, metrics on :9090
+curl http://localhost:9090/metrics
+
+# Discovery Service - gRPC on :8002
+```
+
+## Testing
+
+```bash
+# Identity Service integration tests
 cd services/identity
-go test -v ./test
+go test -v -count=1 ./test/...
+
+# Discovery Service integration tests
+cd services/discovery
+go test -v -count=1 ./test/...
 ```
 
-Expected output:
-```
-=== RUN   TestIdentityService
-=== RUN   TestIdentityService/RegisterNode
-    ✓ Node registered successfully!
-    ✓ Token validated!
-    ✓ Public key retrieved!
---- PASS: TestIdentityService (0.05s)
-PASS
-```
+## Monitoring
 
-## 📊 Monitoring
-
-### Access Grafana
-
-1. Open browser: `http://localhost:3000`
-2. Login: `admin` / `admin`
-3. Add Prometheus data source: `http://prometheus:9090`
+| Endpoint | URL | Credentials |
+|----------|-----|-------------|
+| Grafana | `http://localhost:3000` | admin / admin |
+| Prometheus | `http://localhost:9091` | - |
 
 ### Available Metrics
 
-- **gRPC Requests:** `gordion_grpc_requests_total`
-- **Request Duration:** `gordion_grpc_request_duration_seconds`
-- **Active Connections:** `gordion_active_connections`
-- **Database Queries:** `gordion_db_queries_total`
-- **Query Duration:** `gordion_db_query_duration_seconds`
+| Metric | Description |
+|--------|-------------|
+| `gordion_grpc_requests_total` | Total gRPC request count |
+| `gordion_grpc_request_duration_seconds` | Request latency histogram |
+| `gordion_active_connections` | Current active connections |
+| `gordion_db_queries_total` | Database query count |
+| `gordion_db_query_duration_seconds` | Database query latency |
 
-## 🛠️ Development
+## API Reference
+
+### Identity Service (port 8001)
+
+| Method | Request | Response |
+|--------|---------|----------|
+| `RegisterNode` | `public_key`, `version` | `node_id`, `token`, `expires_at` |
+| `ValidateToken` | `token` | `valid`, `node_id` |
+| `GetPublicKey` | `node_id` | `public_key` |
+
+### Discovery Service (port 8002)
+
+| Method | Request | Response |
+|--------|---------|----------|
+| `RegisterPeer` | `token`, `ip_address`, `port`, `region` | `success`, `message` |
+| `ListPeers` | `region`, `limit` | `peers[]` |
+| `Heartbeat` | `token`, `bandwidth` | `success`, `ttl` |
+
+## Development
 
 ### Generate Proto Code
 
@@ -145,120 +159,42 @@ PASS
 # Identity Service
 cd services/identity
 go build -o identity-server.exe ./cmd/server
+
+# Discovery Service
+cd services/discovery
+go build -o discovery-server.exe ./cmd/server
 ```
 
-### Running Tests
+## Tech Stack
 
-```bash
-# Unit tests
-go test ./...
+| Category | Technology |
+|----------|-----------|
+| Language | Go 1.21+ |
+| RPC | gRPC, Protocol Buffers |
+| Database | PostgreSQL 15 |
+| Cache | Redis 7 |
+| Logging | zerolog |
+| Metrics | Prometheus, Grafana |
+| Containers | Docker, Docker Compose |
+| Networking (planned) | libp2p, WireGuard |
 
-# Integration tests
-go test -v ./test
+## Development Status
 
-# With coverage
-go test -cover ./...
-```
+### Sprint 1: Foundation - Complete
+- Monorepo setup, proto definitions, shared packages
 
-## 📦 Tech Stack
+### Sprint 2: Identity Service - Complete
+- PostgreSQL storage, JWT authentication, gRPC API, integration tests, Prometheus metrics
 
-### Backend
-- **Language:** Go 1.21+
-- **RPC Framework:** gRPC + Protocol Buffers
-- **Database:** PostgreSQL 15
-- **Cache:** Redis 7
-- **Logging:** zerolog (structured logging)
-- **Metrics:** Prometheus
+### Sprint 3: Discovery Service - Complete
+- Redis registry, peer matching, heartbeat mechanism, gRPC API, integration tests
 
-### Infrastructure
-- **Containerization:** Docker
-- **Orchestration:** Docker Compose (K8s coming soon)
-- **Monitoring:** Prometheus + Grafana
+### Sprint 4: Config Service - Planned
+- IP allocation, network topology, configuration distribution
 
-### Networking (Planned)
-- **P2P:** libp2p
-- **VPN:** WireGuard
+### Sprint 5: Agent - Planned
+- libp2p integration, WireGuard tunnels, peer-to-peer networking
 
-## 📈 Development Status
+## License
 
-### Sprint 1: Foundation ✅ (100%)
-- [x] Monorepo setup
-- [x] Proto definitions
-- [x] Shared packages (logger, config, grpcutil)
-- [x] Proto code generation
-
-### Sprint 2: Identity Service ✅ (100%)
-- [x] Database schema & migrations
-- [x] Storage layer (PostgreSQL)
-- [x] Service layer (JWT authentication)
-- [x] gRPC handler
-- [x] Integration tests
-- [x] Prometheus metrics
-
-### Sprint 3: Discovery Service 🔄 (0%)
-- [ ] Redis-based peer registry
-- [ ] Peer discovery & matching
-- [ ] Heartbeat mechanism
-- [ ] Health checks
-
-### Sprint 4: Config Service 🔄 (0%)
-- [ ] IP allocation (DHCP-like)
-- [ ] Network topology management
-- [ ] Configuration distribution
-
-### Sprint 5: Agent (VPN Client) 🔄 (0%)
-- [ ] libp2p integration
-- [ ] WireGuard tunnel management
-- [ ] Peer-to-peer networking
-- [ ] Traffic routing
-
-## 🔒 Security Features
-
-- **JWT-based authentication** - Secure token-based auth
-- **WireGuard encryption** (Planned) - State-of-the-art VPN protocol
-- **Public key infrastructure** - Cryptographic node identity
-- **Token expiration** - Automatic token lifecycle management
-
-## 📝 API Documentation
-
-### Identity Service
-
-**Endpoints:**
-- `RegisterNode(PublicKey, Version) -> (NodeID, Token, ExpiresAt)`
-- `ValidateToken(Token) -> (Valid, NodeID)`
-- `GetPublicKey(NodeID) -> (PublicKey)`
-
-**Example Usage:**
-```go
-// Register a new node
-resp, err := client.RegisterNode(ctx, &identityv1.RegisterNodeRequest{
-    PublicKey: "your-wireguard-public-key",
-    Version:   "1.0.0",
-})
-
-// Validate token
-validateResp, err := client.ValidateToken(ctx, &identityv1.ValidateTokenRequest{
-    Token: resp.Token,
-})
-```
-
-## 🤝 Contributing
-
-Contributions are welcome! This is an educational project focused on learning microservices, P2P networking, and VPN technologies.
-
-## 📄 License
-
-MIT License - see [LICENSE](LICENSE) file for details
-
-## 🔗 Links
-
-- [GitHub Repository](https://github.com/saitddundar/gordion-vpn)
-- [Protocol Buffers](https://protobuf.dev/)
-- [gRPC](https://grpc.io/)
-- [WireGuard](https://www.wireguard.com/)
-
----
-
-**Status:** 🚧 Active Development - Identity Service Complete, Discovery Service In Progress
-
-**Last Updated:** February 2026
+MIT License - see [LICENSE](LICENSE) file for details.
