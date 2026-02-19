@@ -4,5 +4,6 @@ use (
 	.
 	./pkg/logger
 	./pkg/metrics
+	./services/discovery
 	./services/identity
 )
