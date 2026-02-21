@@ -3,12 +3,15 @@ package main
 import (
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
+
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	pkglogger "github.com/saitddundar/gordion-vpn/pkg/logger"
 	discoveryv1 "github.com/saitddundar/gordion-vpn/pkg/proto/discovery/v1"
@@ -40,7 +43,9 @@ func main() {
 
 	handler := grpchandler.NewDiscoveryHandler(reg, m)
 
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(
+		grpc.UnaryInterceptor(grpchandler.MetricsInterceptor("discovery")),
+	)
 	discoveryv1.RegisterDiscoveryServiceServer(grpcServer, handler)
 	reflection.Register(grpcServer)
 
@@ -51,6 +56,15 @@ func main() {
 	}
 
 	logger.Infof("gRPC server listening on %s", addr)
+
+	// Metrics endpoint
+	go func() {
+		http.Handle("/metrics", promhttp.Handler())
+		logger.Info("Metrics endpoint listening on :9091")
+		if err := http.ListenAndServe(":9091", nil); err != nil {
+			logger.Fatalf("Failed to start metrics server: %v", err)
+		}
+	}()
 
 	go func() {
 		if err := grpcServer.Serve(listener); err != nil {
