@@ -7,6 +7,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/saitddundar/gordion-vpn/pkg/auth"
 	discoveryv1 "github.com/saitddundar/gordion-vpn/pkg/proto/discovery/v1"
 	"github.com/saitddundar/gordion-vpn/services/discovery/internal/matcher"
 	"github.com/saitddundar/gordion-vpn/services/discovery/internal/registry"
@@ -14,14 +15,16 @@ import (
 
 type DiscoveryHandler struct {
 	discoveryv1.UnimplementedDiscoveryServiceServer
-	registry *registry.Registry
-	matcher  *matcher.Matcher
+	registry   *registry.Registry
+	matcher    *matcher.Matcher
+	authClient *auth.Client
 }
 
-func NewDiscoveryHandler(reg *registry.Registry, m *matcher.Matcher) *DiscoveryHandler {
+func NewDiscoveryHandler(reg *registry.Registry, m *matcher.Matcher, authClient *auth.Client) *DiscoveryHandler {
 	return &DiscoveryHandler{
-		registry: reg,
-		matcher:  m,
+		registry:   reg,
+		matcher:    m,
+		authClient: authClient,
 	}
 }
 
@@ -33,10 +36,14 @@ func (h *DiscoveryHandler) RegisterPeer(ctx context.Context, req *discoveryv1.Re
 		return nil, status.Error(codes.InvalidArgument, "ip_address is required")
 	}
 
-	// TODO: validate token with identity service
+	// Validate token with Identity Service
+	nodeID, err := h.resolveNodeID(ctx, req.Token)
+	if err != nil {
+		return nil, status.Errorf(codes.Unauthenticated, "auth failed: %v", err)
+	}
 
 	peer := &registry.Peer{
-		NodeID:    req.Token[:8], // temporary: token'dan ID çıkar (ilerde identity service'den alınacak)
+		NodeID:    nodeID,
 		PublicKey: "",
 		Endpoint:  req.IpAddress + ":" + fmt.Sprint(req.Port),
 		Version:   "1.0.0",
@@ -82,7 +89,11 @@ func (h *DiscoveryHandler) Heartbeat(ctx context.Context, req *discoveryv1.Heart
 		return nil, status.Error(codes.InvalidArgument, "token is required")
 	}
 
-	nodeID := req.Token[:8] // temporary
+	// Validate token with Identity Service
+	nodeID, err := h.resolveNodeID(ctx, req.Token)
+	if err != nil {
+		return nil, status.Errorf(codes.Unauthenticated, "auth failed: %v", err)
+	}
 
 	if err := h.registry.Heartbeat(ctx, nodeID); err != nil {
 		return nil, status.Errorf(codes.NotFound, "heartbeat failed: %v", err)
@@ -92,4 +103,16 @@ func (h *DiscoveryHandler) Heartbeat(ctx context.Context, req *discoveryv1.Heart
 		Success: true,
 		Ttl:     30,
 	}, nil
+}
+
+// resolveNodeID validates token via Identity Service or falls back to token prefix
+func (h *DiscoveryHandler) resolveNodeID(ctx context.Context, token string) (string, error) {
+	if h.authClient != nil {
+		return h.authClient.ValidateToken(ctx, token)
+	}
+	// Fallback: no auth client configured (dev mode)
+	if len(token) < 8 {
+		return "", fmt.Errorf("token too short")
+	}
+	return token[:8], nil
 }

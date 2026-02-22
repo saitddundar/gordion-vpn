@@ -2,10 +2,12 @@ package grpc
 
 import (
 	"context"
+	"fmt"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/saitddundar/gordion-vpn/pkg/auth"
 	configv1 "github.com/saitddundar/gordion-vpn/pkg/proto/config/v1"
 	"github.com/saitddundar/gordion-vpn/services/config/internal/allocator"
 )
@@ -13,14 +15,16 @@ import (
 type ConfigHandler struct {
 	configv1.UnimplementedConfigServiceServer
 	allocator   *allocator.Allocator
+	authClient  *auth.Client
 	networkCIDR string
 	mtu         int32
 	dnsServers  []string
 }
 
-func NewConfigHandler(alloc *allocator.Allocator, networkCIDR string, mtu int, dnsServers []string) *ConfigHandler {
+func NewConfigHandler(alloc *allocator.Allocator, authClient *auth.Client, networkCIDR string, mtu int, dnsServers []string) *ConfigHandler {
 	return &ConfigHandler{
 		allocator:   alloc,
+		authClient:  authClient,
 		networkCIDR: networkCIDR,
 		mtu:         int32(mtu),
 		dnsServers:  dnsServers,
@@ -32,7 +36,10 @@ func (h *ConfigHandler) GetConfig(ctx context.Context, req *configv1.GetConfigRe
 		return nil, status.Error(codes.InvalidArgument, "token is required")
 	}
 
-	// TODO: validate token with identity service
+	// Validate token with Identity Service
+	if _, err := h.resolveNodeID(ctx, req.Token); err != nil {
+		return nil, status.Errorf(codes.Unauthenticated, "auth failed: %v", err)
+	}
 
 	return &configv1.GetConfigResponse{
 		NetworkCidr: h.networkCIDR,
@@ -47,6 +54,11 @@ func (h *ConfigHandler) RequestIP(ctx context.Context, req *configv1.RequestIPRe
 	}
 	if req.NodeId == "" {
 		return nil, status.Error(codes.InvalidArgument, "node_id is required")
+	}
+
+	// Validate token with Identity Service
+	if _, err := h.resolveNodeID(ctx, req.Token); err != nil {
+		return nil, status.Errorf(codes.Unauthenticated, "auth failed: %v", err)
 	}
 
 	ip, err := h.allocator.AllocateIP(ctx, req.NodeId)
@@ -69,6 +81,11 @@ func (h *ConfigHandler) ReleaseIP(ctx context.Context, req *configv1.ReleaseIPRe
 		return nil, status.Error(codes.InvalidArgument, "node_id is required")
 	}
 
+	// Validate token with Identity Service
+	if _, err := h.resolveNodeID(ctx, req.Token); err != nil {
+		return nil, status.Errorf(codes.Unauthenticated, "auth failed: %v", err)
+	}
+
 	if err := h.allocator.ReleaseIP(ctx, req.NodeId, req.IpAddress); err != nil {
 		return nil, status.Errorf(codes.Internal, "IP release failed: %v", err)
 	}
@@ -77,4 +94,16 @@ func (h *ConfigHandler) ReleaseIP(ctx context.Context, req *configv1.ReleaseIPRe
 		Success: true,
 		Message: "IP released",
 	}, nil
+}
+
+// resolveNodeID validates token via Identity Service or falls back
+func (h *ConfigHandler) resolveNodeID(ctx context.Context, token string) (string, error) {
+	if h.authClient != nil {
+		return h.authClient.ValidateToken(ctx, token)
+	}
+	// Fallback: no auth client configured (dev mode)
+	if len(token) < 8 {
+		return "", fmt.Errorf("token too short")
+	}
+	return token[:8], nil
 }

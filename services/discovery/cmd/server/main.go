@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	pkglogger "github.com/saitddundar/gordion-vpn/pkg/logger"
+	"github.com/saitddundar/gordion-vpn/pkg/auth"
 	discoveryv1 "github.com/saitddundar/gordion-vpn/pkg/proto/discovery/v1"
 	"github.com/saitddundar/gordion-vpn/pkg/tlsutil"
 	"github.com/saitddundar/gordion-vpn/services/discovery/internal/config"
@@ -42,7 +43,21 @@ func main() {
 
 	m := matcher.New(reg)
 
-	handler := grpchandler.NewDiscoveryHandler(reg, m)
+	// Connect to Identity Service for token validation
+	var authClient *auth.Client
+	identityAddr := os.Getenv("IDENTITY_ADDR")
+	if identityAddr == "" {
+		identityAddr = "localhost:8001"
+	}
+	authClient, err = auth.NewClient(identityAddr, "")
+	if err != nil {
+		logger.Warnf("Auth client disabled: %v", err)
+	} else {
+		defer authClient.Close()
+		logger.Infof("Auth client connected to Identity Service at %s", identityAddr)
+	}
+
+	handler := grpchandler.NewDiscoveryHandler(reg, m, authClient)
 	
 	// Create gRPC server with metrics interceptor and optional TLS
 	serverOpts := []grpc.ServerOption{
