@@ -26,6 +26,12 @@ func Load(path string) (*Config, error) {
 	}
 
 	cfg.setDefaults()
+
+	// Override with env vars if present
+	if redisURL := os.Getenv("REDIS_URL"); redisURL != "" {
+		cfg.RedisURL = redisURL
+	}
+
 	return cfg, nil
 }
 

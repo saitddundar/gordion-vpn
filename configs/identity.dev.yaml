@@ -3,12 +3,12 @@
 # Server
 grpc_port: 8001
 
-# Database
+# Database (override with DATABASE_URL env var in production)
 database_url: "postgresql://gordion:dev_password_123@localhost:5432/gordion?sslmode=disable"
 
 # Logging
 log_level: "debug"
 
-# JWT
-jwt_secret: "dev_secret_change_in_production_123456789"
+# JWT (override with JWT_SECRET env var in production)
+jwt_secret: "CHANGE_ME_IN_PRODUCTION"
 token_duration_hours: 24

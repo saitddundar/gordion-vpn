@@ -9,7 +9,7 @@ services:
     environment:
       POSTGRES_DB: gordion
       POSTGRES_USER: gordion
-      POSTGRES_PASSWORD: dev_password_123
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev_password_123}
       PGDATA: /var/lib/postgresql/data/pgdata
     ports:
       - "5432:5432"
@@ -64,7 +64,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD:-admin}
       - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - grafana_data:/var/lib/grafana
