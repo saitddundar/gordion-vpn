@@ -11,13 +11,11 @@ import (
 	"github.com/saitddundar/gordion-vpn/pkg/tlsutil"
 )
 
-// Client validates tokens with the Identity Service
 type Client struct {
 	identity identityv1.IdentityServiceClient
 	conn     *grpc.ClientConn
 }
 
-// NewClient creates a new auth client connected to Identity Service
 func NewClient(identityAddr string, caFile string) (*Client, error) {
 	var opts []grpc.DialOption
 
@@ -42,12 +40,10 @@ func NewClient(identityAddr string, caFile string) (*Client, error) {
 	}, nil
 }
 
-// Close closes the connection to Identity Service
 func (c *Client) Close() error {
 	return c.conn.Close()
 }
 
-// ValidateToken validates a token and returns the node_id
 func (c *Client) ValidateToken(ctx context.Context, token string) (string, error) {
 	resp, err := c.identity.ValidateToken(ctx, &identityv1.ValidateTokenRequest{
 		Token: token,
