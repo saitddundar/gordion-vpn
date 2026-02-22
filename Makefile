@@ -1,6 +1,6 @@
 .PHONY: build-all build-identity build-discovery build-config \
        test-all test-identity test-discovery test-config \
-       docker-up docker-down docker-restart \
+       docker-up docker-down docker-restart docker-build \
        tidy-all proto clean help
 
 # === BUILD ===
@@ -49,6 +49,10 @@ docker-down:
 
 docker-restart: docker-down docker-up
 
+docker-build:
+	@echo "Building Docker images..."
+	docker-compose -f deployments/docker-compose.dev.yml build
+
 # === DEPENDENCIES ===
 
 tidy-all:
@@ -91,9 +95,10 @@ help:
 	@echo     make test-config       Run config tests
 	@echo.
 	@echo   Docker:
-	@echo     make docker-up         Start PostgreSQL, Redis, Prometheus, Grafana
+	@echo     make docker-up         Start all containers
 	@echo     make docker-down       Stop all containers
 	@echo     make docker-restart    Restart all containers
+	@echo     make docker-build      Build service Docker images
 	@echo.
 	@echo   Other:
 	@echo     make tidy-all          Run go mod tidy on all modules

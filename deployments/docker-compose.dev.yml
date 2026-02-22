@@ -73,6 +73,54 @@ services:
     networks:
       - gordion-network
 
+  # Identity Service
+  identity:
+    build:
+      context: ..
+      dockerfile: services/identity/Dockerfile
+    container_name: gordion-identity
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+      - "9090:9090"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - gordion-network
+
+  # Discovery Service
+  discovery:
+    build:
+      context: ..
+      dockerfile: services/discovery/Dockerfile
+    container_name: gordion-discovery
+    restart: unless-stopped
+    ports:
+      - "8002:8002"
+      - "9093:9091"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - gordion-network
+
+  # Config Service
+  config:
+    build:
+      context: ..
+      dockerfile: services/config/Dockerfile
+    container_name: gordion-config
+    restart: unless-stopped
+    ports:
+      - "8003:8003"
+      - "9094:9092"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - gordion-network
+
 networks:
   gordion-network:
     driver: bridge
