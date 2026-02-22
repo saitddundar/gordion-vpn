@@ -28,6 +28,9 @@ vendor/
 *.key
 *.pem
 
+# TLS Certificates
+certs/
+
 # OS
 .DS_Store
 Thumbs.db

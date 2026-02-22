@@ -15,6 +15,7 @@ import (
 
 	pkglogger "github.com/saitddundar/gordion-vpn/pkg/logger"
 	discoveryv1 "github.com/saitddundar/gordion-vpn/pkg/proto/discovery/v1"
+	"github.com/saitddundar/gordion-vpn/pkg/tlsutil"
 	"github.com/saitddundar/gordion-vpn/services/discovery/internal/config"
 	grpchandler "github.com/saitddundar/gordion-vpn/services/discovery/internal/grpc"
 	"github.com/saitddundar/gordion-vpn/services/discovery/internal/matcher"
@@ -42,10 +43,33 @@ func main() {
 	m := matcher.New(reg)
 
 	handler := grpchandler.NewDiscoveryHandler(reg, m)
-
-	grpcServer := grpc.NewServer(
+	
+	// Create gRPC server with metrics interceptor and optional TLS
+	serverOpts := []grpc.ServerOption{
 		grpc.UnaryInterceptor(grpchandler.MetricsInterceptor("discovery")),
-	)
+	}
+
+	certFile := os.Getenv("TLS_CERT")
+	keyFile := os.Getenv("TLS_KEY")
+	if certFile == "" {
+		certFile = "../../certs/server-cert.pem"
+	}
+	if keyFile == "" {
+		keyFile = "../../certs/server-key.pem"
+	}
+
+	if _, err := os.Stat(certFile); err == nil {
+		creds, err := tlsutil.ServerCredentials(certFile, keyFile)
+		if err != nil {
+			logger.Fatalf("Failed to load TLS: %v", err)
+		}
+		serverOpts = append(serverOpts, grpc.Creds(creds))
+		logger.Info("TLS enabled")
+	} else {
+		logger.Warn("TLS disabled (no certs found)")
+	}
+
+	grpcServer := grpc.NewServer(serverOpts...)
 	discoveryv1.RegisterDiscoveryServiceServer(grpcServer, handler)
 	reflection.Register(grpcServer)
 

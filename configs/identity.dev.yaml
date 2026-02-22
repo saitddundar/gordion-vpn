@@ -9,6 +9,6 @@ database_url: "postgresql://gordion:dev_password_123@localhost:5432/gordion?sslm
 # Logging
 log_level: "debug"
 
-# JWT (override with JWT_SECRET env var in production)
+# JWT  TODO : (override with JWT_SECRET env var in production) 
 jwt_secret: "CHANGE_ME_IN_PRODUCTION"
 token_duration_hours: 24
