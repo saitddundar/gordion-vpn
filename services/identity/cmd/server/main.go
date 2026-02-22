@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	pkglogger "github.com/saitddundar/gordion-vpn/pkg/logger"
+	"github.com/saitddundar/gordion-vpn/pkg/middleware"
 	identityv1 "github.com/saitddundar/gordion-vpn/pkg/proto/identity/v1"
 	"github.com/saitddundar/gordion-vpn/pkg/tlsutil"
 	"github.com/saitddundar/gordion-vpn/services/identity/internal/config"
@@ -48,9 +49,11 @@ func main() {
 
 	handler := grpchandler.NewIdentityHandler(identityService)
 
-	// Create gRPC server with metrics interceptor and optional TLS
 	serverOpts := []grpc.ServerOption{
-		grpc.UnaryInterceptor(grpchandler.MetricsInterceptor("identity")),
+		grpc.ChainUnaryInterceptor(
+			middleware.LoggingInterceptor(logger),
+			grpchandler.MetricsInterceptor("identity"),
+		),
 	}
 
 	// Load TLS if cert files exist

@@ -15,6 +15,7 @@ import (
 
 	pkglogger "github.com/saitddundar/gordion-vpn/pkg/logger"
 	"github.com/saitddundar/gordion-vpn/pkg/auth"
+	"github.com/saitddundar/gordion-vpn/pkg/middleware"
 	configv1 "github.com/saitddundar/gordion-vpn/pkg/proto/config/v1"
 	"github.com/saitddundar/gordion-vpn/pkg/tlsutil"
 	"github.com/saitddundar/gordion-vpn/services/config/internal/allocator"
@@ -58,7 +59,10 @@ func main() {
 
 	// Create gRPC server with metrics interceptor and optional TLS
 	serverOpts := []grpc.ServerOption{
-		grpc.UnaryInterceptor(grpchandler.MetricsInterceptor("config")),
+		grpc.ChainUnaryInterceptor(
+			middleware.LoggingInterceptor(logger),
+			grpchandler.MetricsInterceptor("config"),
+		),
 	}
 
 	certFile := os.Getenv("TLS_CERT")
