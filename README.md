@@ -10,11 +10,11 @@ Gordion VPN is a decentralized VPN that turns users into both clients and relay 
 
 ### Control Plane (Microservices)
 
-| Service | Status | Description |
-|---------|--------|-------------|
-| **Identity Service** | Complete | Node authentication, JWT token management |
-| **Discovery Service** | Complete | Peer discovery, registration, heartbeat |
-| **Config Service** | Planned | Network configuration, IP allocation |
+| Service | Port | Status | Description |
+|---------|------|--------|-------------|
+| **Identity Service** | 8001 | Complete | Node authentication, JWT token management |
+| **Discovery Service** | 8002 | Complete | Peer discovery, registration, heartbeat |
+| **Config Service** | 8003 | Complete | Network configuration, IP allocation |
 
 ### Data Plane
 
@@ -24,24 +24,28 @@ Gordion VPN is a decentralized VPN that turns users into both clients and relay 
 
 ### Monitoring
 
-| Tool | Status | Description |
-|------|--------|-------------|
-| **Prometheus** | Complete | Metrics collection |
-| **Grafana** | Complete | Metrics visualization |
+| Tool | Port | Status | Description |
+|------|------|--------|-------------|
+| **Prometheus** | 9091 | Complete | Metrics collection from all services |
+| **Grafana** | 3000 | Complete | Metrics visualization and dashboards |
 
 ## Project Structure
 
 ```
 gordion-vpn/
 ├── services/
-│   ├── identity/              # Identity service
+│   ├── identity/              # Identity service (PostgreSQL)
 │   │   ├── cmd/server/        # Entry point
 │   │   ├── internal/          # Config, storage, service, gRPC handler
 │   │   ├── migrations/        # Database migrations
 │   │   └── test/              # Integration tests
-│   └── discovery/             # Discovery service
+│   ├── discovery/             # Discovery service (Redis)
+│   │   ├── cmd/server/        # Entry point
+│   │   ├── internal/          # Config, registry, matcher, gRPC handler
+│   │   └── test/              # Integration tests
+│   └── config/                # Config service (Redis)
 │       ├── cmd/server/        # Entry point
-│       ├── internal/          # Config, registry, matcher, gRPC handler
+│       ├── internal/          # Config, allocator, gRPC handler
 │       └── test/              # Integration tests
 ├── pkg/
 │   ├── logger/                # Structured logging (zerolog)
@@ -55,7 +59,8 @@ gordion-vpn/
 │   └── config/v1/
 ├── deployments/               # Docker Compose, Prometheus config
 ├── configs/                   # Service configuration files
-└── scripts/                   # Build and utility scripts
+├── scripts/                   # Build and utility scripts
+└── Makefile                   # Build automation
 ```
 
 ## Getting Started
@@ -65,6 +70,7 @@ gordion-vpn/
 - Go 1.21+
 - Docker and Docker Compose
 - Protocol Buffers compiler (`protoc`)
+- Make (optional, for build automation)
 
 ### Quick Start
 
@@ -73,57 +79,94 @@ gordion-vpn/
 git clone https://github.com/saitddundar/gordion-vpn.git
 cd gordion-vpn
 
-# Start infrastructure
-docker-compose -f deployments/docker-compose.dev.yml up -d
+# Start infrastructure (PostgreSQL, Redis, Prometheus, Grafana)
+make docker-up
 
 # Run database migrations
 docker exec -i gordion-postgres psql -U gordion -d gordion \
   < services/identity/migrations/0001_initial.sql
 
-# Start Identity Service
-cd services/identity
-go run ./cmd/server
+# Build all services
+make build-all
 
-# Start Discovery Service (separate terminal)
-cd services/discovery
-go run ./cmd/server
+# Start services (each in a separate terminal)
+cd services/identity  && ./identity-server.exe
+cd services/discovery && ./discovery-server.exe
+cd services/config    && ./config-server.exe
 ```
 
 ### Verify Services
 
 ```bash
-# Identity Service - gRPC on :8001, metrics on :9090
+# Identity Service metrics
 curl http://localhost:9090/metrics
 
-# Discovery Service - gRPC on :8002
+# Discovery Service metrics
+curl http://localhost:9091/metrics
+
+# Config Service metrics
+curl http://localhost:9092/metrics
+```
+
+## Makefile Commands
+
+```bash
+make help              # Show all available commands
+
+# Build
+make build-all         # Build all services
+make build-identity    # Build identity service
+make build-discovery   # Build discovery service
+make build-config      # Build config service
+
+# Test
+make test-all          # Run all integration tests
+make test-identity     # Run identity tests
+make test-discovery    # Run discovery tests
+make test-config       # Run config tests
+
+# Docker
+make docker-up         # Start infrastructure
+make docker-down       # Stop infrastructure
+make docker-restart    # Restart infrastructure
+
+# Utilities
+make tidy-all          # Run go mod tidy on all modules
+make proto             # Generate protobuf code
+make clean             # Remove build artifacts
 ```
 
 ## Testing
 
 ```bash
-# Identity Service integration tests
-cd services/identity
-go test -v -count=1 ./test/...
+# Run all tests
+make test-all
 
-# Discovery Service integration tests
-cd services/discovery
-go test -v -count=1 ./test/...
+# Or individually
+cd services/identity  && go test -v -count=1 ./test/...
+cd services/discovery && go test -v -count=1 ./test/...
+cd services/config    && go test -v -count=1 ./test/...
 ```
 
 ## Monitoring
 
-| Endpoint | URL | Credentials |
-|----------|-----|-------------|
-| Grafana | `http://localhost:3000` | admin / admin |
-| Prometheus | `http://localhost:9091` | - |
+All services expose Prometheus metrics via dedicated HTTP endpoints.
+
+| Service | Metrics Endpoint |
+|---------|-----------------|
+| Identity | `http://localhost:9090/metrics` |
+| Discovery | `http://localhost:9091/metrics` |
+| Config | `http://localhost:9092/metrics` |
+| Grafana | `http://localhost:3000` (admin / admin) |
+| Prometheus | `http://localhost:9091` |
 
 ### Available Metrics
 
 | Metric | Description |
 |--------|-------------|
-| `gordion_grpc_requests_total` | Total gRPC request count |
+| `gordion_grpc_requests_total` | Total gRPC request count by service, method, status |
 | `gordion_grpc_request_duration_seconds` | Request latency histogram |
-| `gordion_active_connections` | Current active connections |
+| `gordion_active_connections` | Current active connections per service |
 | `gordion_db_queries_total` | Database query count |
 | `gordion_db_query_duration_seconds` | Database query latency |
 
@@ -145,25 +188,13 @@ go test -v -count=1 ./test/...
 | `ListPeers` | `region`, `limit` | `peers[]` |
 | `Heartbeat` | `token`, `bandwidth` | `success`, `ttl` |
 
-## Development
+### Config Service (port 8003)
 
-### Generate Proto Code
-
-```powershell
-.\scripts\proto-gen.ps1
-```
-
-### Build Services
-
-```bash
-# Identity Service
-cd services/identity
-go build -o identity-server.exe ./cmd/server
-
-# Discovery Service
-cd services/discovery
-go build -o discovery-server.exe ./cmd/server
-```
+| Method | Request | Response |
+|--------|---------|----------|
+| `GetConfig` | `token` | `network_cidr`, `mtu`, `dns_servers` |
+| `RequestIP` | `token`, `node_id` | `ip_address`, `subnet_mask`, `gateway` |
+| `ReleaseIP` | `token`, `node_id`, `ip_address` | `success`, `message` |
 
 ## Tech Stack
 
@@ -175,6 +206,7 @@ go build -o discovery-server.exe ./cmd/server
 | Cache | Redis 7 |
 | Logging | zerolog |
 | Metrics | Prometheus, Grafana |
+| Build | Make |
 | Containers | Docker, Docker Compose |
 | Networking (planned) | libp2p, WireGuard |
 
@@ -187,12 +219,12 @@ go build -o discovery-server.exe ./cmd/server
 - PostgreSQL storage, JWT authentication, gRPC API, integration tests, Prometheus metrics
 
 ### Sprint 3: Discovery Service - Complete
-- Redis registry, peer matching, heartbeat mechanism, gRPC API, integration tests
+- Redis registry, peer matching, heartbeat mechanism, gRPC API, integration tests, Prometheus metrics
 
-### Sprint 4: Config Service - Planned
-- IP allocation, network topology, configuration distribution
+### Sprint 4: Config Service - Complete
+- IP allocation (DHCP-like), network configuration, gRPC API, integration tests, Prometheus metrics
 
-### Sprint 5: Agent - Planned
+### Sprint 5: Agent - Next
 - libp2p integration, WireGuard tunnels, peer-to-peer networking
 
 ## License
