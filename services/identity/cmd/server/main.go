@@ -19,6 +19,7 @@ import (
 	"github.com/saitddundar/gordion-vpn/pkg/middleware"
 	identityv1 "github.com/saitddundar/gordion-vpn/pkg/proto/identity/v1"
 	"github.com/saitddundar/gordion-vpn/pkg/tlsutil"
+	"github.com/saitddundar/gordion-vpn/pkg/tracing"
 	"github.com/saitddundar/gordion-vpn/services/identity/internal/config"
 	grpchandler "github.com/saitddundar/gordion-vpn/services/identity/internal/grpc"
 	"github.com/saitddundar/gordion-vpn/services/identity/internal/service"
@@ -51,6 +52,7 @@ func main() {
 
 	serverOpts := []grpc.ServerOption{
 		grpc.ChainUnaryInterceptor(
+			tracing.ServerInterceptor(logger, "identity"),
 			middleware.LoggingInterceptor(logger),
 			grpchandler.MetricsInterceptor("identity"),
 		),

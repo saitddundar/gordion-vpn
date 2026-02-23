@@ -13,11 +13,12 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	pkglogger "github.com/saitddundar/gordion-vpn/pkg/logger"
 	"github.com/saitddundar/gordion-vpn/pkg/auth"
+	pkglogger "github.com/saitddundar/gordion-vpn/pkg/logger"
 	"github.com/saitddundar/gordion-vpn/pkg/middleware"
 	discoveryv1 "github.com/saitddundar/gordion-vpn/pkg/proto/discovery/v1"
 	"github.com/saitddundar/gordion-vpn/pkg/tlsutil"
+	"github.com/saitddundar/gordion-vpn/pkg/tracing"
 	"github.com/saitddundar/gordion-vpn/services/discovery/internal/config"
 	grpchandler "github.com/saitddundar/gordion-vpn/services/discovery/internal/grpc"
 	"github.com/saitddundar/gordion-vpn/services/discovery/internal/matcher"
@@ -59,10 +60,11 @@ func main() {
 	}
 
 	handler := grpchandler.NewDiscoveryHandler(reg, m, authClient)
-	
+
 	// Create gRPC server with metrics interceptor and optional TLS
 	serverOpts := []grpc.ServerOption{
 		grpc.ChainUnaryInterceptor(
+			tracing.ServerInterceptor(logger, "discovery"),
 			middleware.LoggingInterceptor(logger),
 			grpchandler.MetricsInterceptor("discovery"),
 		),

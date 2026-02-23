@@ -10,6 +10,7 @@ import (
 	configv1 "github.com/saitddundar/gordion-vpn/pkg/proto/config/v1"
 	discoveryv1 "github.com/saitddundar/gordion-vpn/pkg/proto/discovery/v1"
 	identityv1 "github.com/saitddundar/gordion-vpn/pkg/proto/identity/v1"
+	"github.com/saitddundar/gordion-vpn/pkg/tracing"
 )
 
 type Client struct {
@@ -25,6 +26,7 @@ type Client struct {
 func New(identityAddr, discoveryAddr, configAddr string) (*Client, error) {
 	opts := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithUnaryInterceptor(tracing.ClientInterceptor()),
 	}
 
 	identityConn, err := grpc.Dial(identityAddr, opts...)

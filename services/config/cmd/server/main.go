@@ -13,11 +13,12 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	pkglogger "github.com/saitddundar/gordion-vpn/pkg/logger"
 	"github.com/saitddundar/gordion-vpn/pkg/auth"
+	pkglogger "github.com/saitddundar/gordion-vpn/pkg/logger"
 	"github.com/saitddundar/gordion-vpn/pkg/middleware"
 	configv1 "github.com/saitddundar/gordion-vpn/pkg/proto/config/v1"
 	"github.com/saitddundar/gordion-vpn/pkg/tlsutil"
+	"github.com/saitddundar/gordion-vpn/pkg/tracing"
 	"github.com/saitddundar/gordion-vpn/services/config/internal/allocator"
 	"github.com/saitddundar/gordion-vpn/services/config/internal/config"
 	grpchandler "github.com/saitddundar/gordion-vpn/services/config/internal/grpc"
@@ -60,6 +61,7 @@ func main() {
 	// Create gRPC server with metrics interceptor and optional TLS
 	serverOpts := []grpc.ServerOption{
 		grpc.ChainUnaryInterceptor(
+			tracing.ServerInterceptor(logger, "config"),
 			middleware.LoggingInterceptor(logger),
 			grpchandler.MetricsInterceptor("config"),
 		),
