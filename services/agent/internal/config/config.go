@@ -11,7 +11,6 @@ type Config struct {
 	IdentityAddr  string `yaml:"identity_addr"`
 	DiscoveryAddr string `yaml:"discovery_addr"`
 	ConfigAddr    string `yaml:"config_addr"`
-	PublicKey     string `yaml:"public_key"`
 	LogLevel      string `yaml:"log_level"`
 	Heartbeat     int    `yaml:"heartbeat_interval"`
 }

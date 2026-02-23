@@ -11,7 +11,7 @@ scrape_configs:
           service: 'identity'
           env: 'dev'
 
-  # Discovery Service (future)
+  # Discovery Service
   - job_name: 'discovery-service'
     static_configs:
       - targets: ['host.docker.internal:9091']
@@ -19,7 +19,7 @@ scrape_configs:
           service: 'discovery'
           env: 'dev'
 
-  # Config Service (future)
+  # Config Service
   - job_name: 'config-service'
     static_configs:
       - targets: ['host.docker.internal:9092']

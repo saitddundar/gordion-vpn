@@ -5,6 +5,7 @@ WORKDIR /build
 COPY go.work go.work.sum ./
 COPY go.mod go.sum ./
 COPY pkg/ pkg/
+COPY configs/ configs/
 COPY services/agent/ services/agent/
 
 RUN cd services/agent && go build -o /agent ./cmd/agent

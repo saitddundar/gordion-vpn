@@ -1,11 +1,11 @@
-.PHONY: build-all build-identity build-discovery build-config \
-       test-all test-identity test-discovery test-config \
+.PHONY: build-all build-identity build-discovery build-config build-agent \
+       test-all test-identity test-discovery test-config test-agent \
        docker-up docker-down docker-restart docker-build \
        tidy-all proto clean help
 
 # === BUILD ===
 
-build-all: build-identity build-discovery build-config
+build-all: build-identity build-discovery build-config build-agent
 	@echo "All services built successfully"
 
 build-identity:
@@ -20,9 +20,13 @@ build-config:
 	@echo "Building Config Service..."
 	cd services/config && go build -o config-server.exe ./cmd/server
 
+build-agent:
+	@echo "Building Agent..."
+	cd services/agent && go build -o agent.exe ./cmd/agent
+
 # === TEST ===
 
-test-all: test-identity test-discovery test-config
+test-all: test-identity test-discovery test-config test-agent
 	@echo "All tests completed"
 
 test-identity:
@@ -36,6 +40,10 @@ test-discovery:
 test-config:
 	@echo "Testing Config Service..."
 	cd services/config && go test -v -count=1 ./test/...
+
+test-agent:
+	@echo "Testing Agent..."
+	cd services/agent && go test -v -count=1 ./test/...
 
 # === DOCKER ===
 
@@ -60,6 +68,7 @@ tidy-all:
 	cd services/identity && go mod tidy
 	cd services/discovery && go mod tidy
 	cd services/config && go mod tidy
+	cd services/agent && go mod tidy
 
 # === PROTO ===
 
@@ -74,6 +83,7 @@ clean:
 	del /Q services\identity\identity-server.exe 2>nul || true
 	del /Q services\discovery\discovery-server.exe 2>nul || true
 	del /Q services\config\config-server.exe 2>nul || true
+	del /Q services\agent\agent.exe 2>nul || true
 
 # === HELP ===
 
@@ -87,12 +97,14 @@ help:
 	@echo     make build-identity    Build identity service
 	@echo     make build-discovery   Build discovery service
 	@echo     make build-config      Build config service
+	@echo     make build-agent       Build agent
 	@echo.
 	@echo   Test:
 	@echo     make test-all          Run all tests
 	@echo     make test-identity     Run identity tests
 	@echo     make test-discovery    Run discovery tests
 	@echo     make test-config       Run config tests
+	@echo     make test-agent        Run agent tests
 	@echo.
 	@echo   Docker:
 	@echo     make docker-up         Start all containers
