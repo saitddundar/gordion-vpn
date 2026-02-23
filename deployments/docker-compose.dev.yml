@@ -121,6 +121,26 @@ services:
     networks:
       - gordion-network
 
+  # Agent (VPN Client)
+  agent:
+    build:
+      context: ..
+      dockerfile: services/agent/Dockerfile
+    container_name: gordion-agent
+    restart: unless-stopped
+    environment:
+      - IDENTITY_ADDR=gordion-identity:8001
+      - DISCOVERY_ADDR=gordion-discovery:8002
+      - CONFIG_ADDR=gordion-config:8003
+    cap_add:
+      - NET_ADMIN
+    depends_on:
+      - identity
+      - discovery
+      - config
+    networks:
+      - gordion-network
+
 networks:
   gordion-network:
     driver: bridge
