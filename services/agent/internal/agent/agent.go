@@ -2,17 +2,21 @@ package agent
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"sync"
 	"time"
 
 	pkglogger "github.com/saitddundar/gordion-vpn/pkg/logger"
 	"github.com/saitddundar/gordion-vpn/services/agent/internal/client"
 	"github.com/saitddundar/gordion-vpn/services/agent/internal/config"
+	"github.com/saitddundar/gordion-vpn/services/agent/internal/wireguard"
 )
 
 type Agent struct {
 	cfg    *config.Config
 	client *client.Client
+	wg_mgr *wireguard.Manager
 	logger pkglogger.Logger
 
 	nodeID string
@@ -29,9 +33,12 @@ func New(cfg *config.Config, logger pkglogger.Logger) (*Agent, error) {
 		return nil, err
 	}
 
+	wgMgr := wireguard.NewManager(logger, true) // dry-run for now
+
 	return &Agent{
 		cfg:    cfg,
 		client: c,
+		wg_mgr: wgMgr,
 		logger: logger,
 	}, nil
 }
@@ -84,11 +91,35 @@ func (a *Agent) Start(ctx context.Context) error {
 		}
 	}
 
-	// Step 6: Start heartbeat loop
+	// Step 6: Configure WireGuard tunnel
+	a.logger.Info("Configuring WireGuard tunnel...")
+	dns := ""
+	if len(netCfg.DnsServers) > 0 {
+		dns = strings.Join(netCfg.DnsServers, ", ")
+	}
+
+	wgCfg := &wireguard.Config{
+		PrivateKey: a.cfg.PublicKey, // TODO: use actual private key
+		Address:    fmt.Sprintf("%s/%s", ip, subnet),
+		MTU:        netCfg.Mtu,
+		DNS:        dns,
+	}
+
+	// Add discovered peers to WireGuard config
+	for _, p := range peers {
+		wgCfg.Peers = append(wgCfg.Peers, wireguard.PeerConfig{
+			PublicKey:  p.NodeId,
+			AllowedIPs: netCfg.NetworkCidr,
+		})
+	}
+
+	if err := a.wg_mgr.Configure(wgCfg); err != nil {
+		a.logger.Errorf("WireGuard config failed: %v", err)
+	}
+
+	// Step 7: Start heartbeat loop
 	a.wg.Add(1)
 	go a.heartbeatLoop(ctx)
-
-	// TODO: Step 7: Configure WireGuard tunnel
 
 	a.logger.Info("Agent is running")
 	return nil
@@ -111,6 +142,11 @@ func (a *Agent) Stop() {
 		} else {
 			a.logger.Infof("Released IP %s", a.vpnIP)
 		}
+	}
+
+	// Tear down WireGuard
+	if err := a.wg_mgr.Down(); err != nil {
+		a.logger.Errorf("WireGuard down failed: %v", err)
 	}
 
 	a.client.Close()
