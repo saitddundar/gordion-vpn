@@ -46,9 +46,17 @@ func New(cfg *config.Config, logger pkglogger.Logger) (*Agent, error) {
 func (a *Agent) Start(ctx context.Context) error {
 	ctx, a.cancel = context.WithCancel(ctx)
 
+	// Step 0: Generate WireGuard keypair
+	a.logger.Info("Generating WireGuard keypair...")
+	keyPair, err := wireguard.GenerateKeyPair()
+	if err != nil {
+		return err
+	}
+	a.logger.Infof("Public key: %s", keyPair.PublicKey[:16]+"...")
+
 	// Step 1: Register with Identity Service
 	a.logger.Info("Registering with Identity Service...")
-	nodeID, token, err := a.client.Register(ctx, a.cfg.PublicKey)
+	nodeID, token, err := a.client.Register(ctx, keyPair.PublicKey)
 	if err != nil {
 		return err
 	}
@@ -99,7 +107,7 @@ func (a *Agent) Start(ctx context.Context) error {
 	}
 
 	wgCfg := &wireguard.Config{
-		PrivateKey: a.cfg.PublicKey, // TODO: use actual private key
+		PrivateKey: keyPair.PrivateKey,
 		Address:    fmt.Sprintf("%s/%s", ip, subnet),
 		MTU:        netCfg.Mtu,
 		DNS:        dns,
