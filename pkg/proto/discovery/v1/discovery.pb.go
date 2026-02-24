@@ -30,6 +30,8 @@ type Peer struct {
 	Region        string                 `protobuf:"bytes,4,opt,name=region,proto3" json:"region,omitempty"`                        // Geographic region (e.g., "eu-west")
 	Bandwidth     int64                  `protobuf:"varint,5,opt,name=bandwidth,proto3" json:"bandwidth,omitempty"`                 // Available bandwidth (bytes/sec)
 	LastSeen      int64                  `protobuf:"varint,6,opt,name=last_seen,json=lastSeen,proto3" json:"last_seen,omitempty"`   // Last heartbeat timestamp
+	PeerId        string                 `protobuf:"bytes,7,opt,name=peer_id,json=peerId,proto3" json:"peer_id,omitempty"`          // libp2p PeerID
+	P2PAddrs      []string               `protobuf:"bytes,8,rep,name=p2p_addrs,json=p2pAddrs,proto3" json:"p2p_addrs,omitempty"`    // libp2p Multiaddrs
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -104,6 +106,20 @@ func (x *Peer) GetLastSeen() int64 {
 		return x.LastSeen
 	}
 	return 0
+}
+
+func (x *Peer) GetPeerId() string {
+	if x != nil {
+		return x.PeerId
+	}
+	return ""
+}
+
+func (x *Peer) GetP2PAddrs() []string {
+	if x != nil {
+		return x.P2PAddrs
+	}
+	return nil
 }
 
 // ListPeers Messages
@@ -211,6 +227,8 @@ type RegisterPeerRequest struct {
 	Port          int32                  `protobuf:"varint,3,opt,name=port,proto3" json:"port,omitempty"`                           // Listen port
 	Region        string                 `protobuf:"bytes,4,opt,name=region,proto3" json:"region,omitempty"`                        // Geographic region
 	Bandwidth     int64                  `protobuf:"varint,5,opt,name=bandwidth,proto3" json:"bandwidth,omitempty"`                 // Available bandwidth
+	PeerId        string                 `protobuf:"bytes,6,opt,name=peer_id,json=peerId,proto3" json:"peer_id,omitempty"`          // libp2p PeerID
+	P2PAddrs      []string               `protobuf:"bytes,7,rep,name=p2p_addrs,json=p2pAddrs,proto3" json:"p2p_addrs,omitempty"`    // libp2p Multiaddrs
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -278,6 +296,20 @@ func (x *RegisterPeerRequest) GetBandwidth() int64 {
 		return x.Bandwidth
 	}
 	return 0
+}
+
+func (x *RegisterPeerRequest) GetPeerId() string {
+	if x != nil {
+		return x.PeerId
+	}
+	return ""
+}
+
+func (x *RegisterPeerRequest) GetP2PAddrs() []string {
+	if x != nil {
+		return x.P2PAddrs
+	}
+	return nil
 }
 
 type RegisterPeerResponse struct {
@@ -441,7 +473,7 @@ var File_discovery_v1_discovery_proto protoreflect.FileDescriptor
 
 const file_discovery_v1_discovery_proto_rawDesc = "" +
 	"\n" +
-	"\x1cdiscovery/v1/discovery.proto\x12\fdiscovery.v1\"\xa5\x01\n" +
+	"\x1cdiscovery/v1/discovery.proto\x12\fdiscovery.v1\"\xdb\x01\n" +
 	"\x04Peer\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1d\n" +
 	"\n" +
@@ -449,19 +481,23 @@ const file_discovery_v1_discovery_proto_rawDesc = "" +
 	"\x04port\x18\x03 \x01(\x05R\x04port\x12\x16\n" +
 	"\x06region\x18\x04 \x01(\tR\x06region\x12\x1c\n" +
 	"\tbandwidth\x18\x05 \x01(\x03R\tbandwidth\x12\x1b\n" +
-	"\tlast_seen\x18\x06 \x01(\x03R\blastSeen\"@\n" +
+	"\tlast_seen\x18\x06 \x01(\x03R\blastSeen\x12\x17\n" +
+	"\apeer_id\x18\a \x01(\tR\x06peerId\x12\x1b\n" +
+	"\tp2p_addrs\x18\b \x03(\tR\bp2pAddrs\"@\n" +
 	"\x10ListPeersRequest\x12\x16\n" +
 	"\x06region\x18\x01 \x01(\tR\x06region\x12\x14\n" +
 	"\x05limit\x18\x02 \x01(\x05R\x05limit\"=\n" +
 	"\x11ListPeersResponse\x12(\n" +
-	"\x05peers\x18\x01 \x03(\v2\x12.discovery.v1.PeerR\x05peers\"\x94\x01\n" +
+	"\x05peers\x18\x01 \x03(\v2\x12.discovery.v1.PeerR\x05peers\"\xca\x01\n" +
 	"\x13RegisterPeerRequest\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x12\x1d\n" +
 	"\n" +
 	"ip_address\x18\x02 \x01(\tR\tipAddress\x12\x12\n" +
 	"\x04port\x18\x03 \x01(\x05R\x04port\x12\x16\n" +
 	"\x06region\x18\x04 \x01(\tR\x06region\x12\x1c\n" +
-	"\tbandwidth\x18\x05 \x01(\x03R\tbandwidth\"J\n" +
+	"\tbandwidth\x18\x05 \x01(\x03R\tbandwidth\x12\x17\n" +
+	"\apeer_id\x18\x06 \x01(\tR\x06peerId\x12\x1b\n" +
+	"\tp2p_addrs\x18\a \x03(\tR\bp2pAddrs\"J\n" +
 	"\x14RegisterPeerResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\"F\n" +

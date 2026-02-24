@@ -15,6 +15,7 @@ type Config struct {
 	Heartbeat     int    `yaml:"heartbeat_interval"`
 	DryRun        *bool  `yaml:"dry_run"`
 	WireGuardPort int    `yaml:"wireguard_port"`
+	P2PPort       int    `yaml:"p2p_port"`
 }
 
 func Load(path string) (*Config, error) {
@@ -56,6 +57,9 @@ func (c *Config) setDefaults() {
 	}
 	if c.WireGuardPort == 0 {
 		c.WireGuardPort = 51820
+	}
+	if c.P2PPort == 0 {
+		c.P2PPort = 4001
 	}
 }
 

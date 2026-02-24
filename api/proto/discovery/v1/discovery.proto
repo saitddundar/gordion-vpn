@@ -24,6 +24,8 @@ message Peer {
   string region = 4;        // Geographic region (e.g., "eu-west")
   int64 bandwidth = 5;      // Available bandwidth (bytes/sec)
   int64 last_seen = 6;      // Last heartbeat timestamp
+  string peer_id = 7;       // libp2p PeerID
+  repeated string p2p_addrs = 8; // libp2p Multiaddrs
 }
 
 // ListPeers Messages
@@ -43,6 +45,8 @@ message RegisterPeerRequest {
   int32 port = 3;           // Listen port
   string region = 4;        // Geographic region
   int64 bandwidth = 5;      // Available bandwidth
+  string peer_id = 6;       // libp2p PeerID
+  repeated string p2p_addrs = 7; // libp2p Multiaddrs
 }
 
 message RegisterPeerResponse {

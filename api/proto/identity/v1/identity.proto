@@ -19,7 +19,8 @@ service IdentityService {
 // RegisterNode Messages
 message RegisterNodeRequest {
   string public_key = 1;  // Node's Ed25519 public key (hex format)
-  string version = 2;     // Agent version (semantic versioning)
+  string version = 2;     // Agent version
+  string peer_id = 3;     // libp2p peer identity
 }
 
 message RegisterNodeResponse {
