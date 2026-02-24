@@ -47,6 +47,10 @@ func (r *Registry) Close() error {
 	return r.client.Close()
 }
 
+func (r *Registry) Ping() error {
+	return r.client.Ping(context.Background()).Err()
+}
+
 func (r *Registry) Register(ctx context.Context, peer *Peer) error {
 	peer.LastSeen = time.Now().Unix()
 

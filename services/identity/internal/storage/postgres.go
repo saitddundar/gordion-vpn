@@ -29,7 +29,11 @@ func (s *Storage) Close() error {
 	return s.db.Close()
 }
 
-// CreateNode creates a new node
+// checks database connectivity for health checks
+func (s *Storage) Ping() error {
+	return s.db.Ping()
+}
+
 func (s *Storage) CreateNode(ctx context.Context, publicKey, version string) (*Node, error) {
 	query := `
 		INSERT INTO nodes (public_key, version)

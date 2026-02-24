@@ -52,6 +52,10 @@ func (a *Allocator) Close() error {
 	return a.client.Close()
 }
 
+func (a *Allocator) Ping() error {
+	return a.client.Ping(context.Background()).Err()
+}
+
 func (a *Allocator) Gateway() string {
 	return a.gateway.String()
 }

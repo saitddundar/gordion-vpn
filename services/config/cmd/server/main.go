@@ -16,9 +16,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/saitddundar/gordion-vpn/pkg/auth"
+	"github.com/saitddundar/gordion-vpn/pkg/healthcheck"
 	pkglogger "github.com/saitddundar/gordion-vpn/pkg/logger"
 	"github.com/saitddundar/gordion-vpn/pkg/middleware"
 	configv1 "github.com/saitddundar/gordion-vpn/pkg/proto/config/v1"
+	"github.com/saitddundar/gordion-vpn/pkg/ratelimit"
 	"github.com/saitddundar/gordion-vpn/pkg/tlsutil"
 	"github.com/saitddundar/gordion-vpn/pkg/tracing"
 	"github.com/saitddundar/gordion-vpn/services/config/internal/allocator"
@@ -62,9 +64,11 @@ func main() {
 
 	handler := grpchandler.NewConfigHandler(alloc, authClient, cfg.NetworkCIDR, cfg.MTU, cfg.DNSServers)
 
-	// Create gRPC server with interceptors
+	limiter := ratelimit.New(100, time.Minute)
+
 	serverOpts := []grpc.ServerOption{
 		grpc.ChainUnaryInterceptor(
+			ratelimit.UnaryInterceptor(limiter),
 			tracing.ServerInterceptor(logger, "config"),
 			middleware.LoggingInterceptor(logger),
 			grpchandler.MetricsInterceptor("config"),
@@ -93,6 +97,9 @@ func main() {
 
 	grpcServer := grpc.NewServer(serverOpts...)
 	configv1.RegisterConfigServiceServer(grpcServer, handler)
+	healthcheck.Register(grpcServer, "config", func() bool {
+		return alloc.Ping() == nil
+	})
 	reflection.Register(grpcServer)
 
 	addr := fmt.Sprintf(":%d", cfg.GRPCPort)

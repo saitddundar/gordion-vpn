@@ -15,9 +15,11 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"github.com/saitddundar/gordion-vpn/pkg/healthcheck"
 	pkglogger "github.com/saitddundar/gordion-vpn/pkg/logger"
 	"github.com/saitddundar/gordion-vpn/pkg/middleware"
 	identityv1 "github.com/saitddundar/gordion-vpn/pkg/proto/identity/v1"
+	"github.com/saitddundar/gordion-vpn/pkg/ratelimit"
 	"github.com/saitddundar/gordion-vpn/pkg/tlsutil"
 	"github.com/saitddundar/gordion-vpn/pkg/tracing"
 	"github.com/saitddundar/gordion-vpn/services/identity/internal/config"
@@ -50,8 +52,11 @@ func main() {
 
 	handler := grpchandler.NewIdentityHandler(identityService)
 
+	limiter := ratelimit.New(100, time.Minute)
+
 	serverOpts := []grpc.ServerOption{
 		grpc.ChainUnaryInterceptor(
+			ratelimit.UnaryInterceptor(limiter),
 			tracing.ServerInterceptor(logger, "identity"),
 			middleware.LoggingInterceptor(logger),
 			grpchandler.MetricsInterceptor("identity"),
@@ -81,7 +86,9 @@ func main() {
 
 	grpcServer := grpc.NewServer(serverOpts...)
 	identityv1.RegisterIdentityServiceServer(grpcServer, handler)
-
+	healthcheck.Register(grpcServer, "identity", func() bool {
+		return store.Ping() == nil
+	})
 	reflection.Register(grpcServer)
 
 	addr := fmt.Sprintf(":%d", cfg.GRPCPort)
