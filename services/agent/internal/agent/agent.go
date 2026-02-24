@@ -33,7 +33,7 @@ func New(cfg *config.Config, logger pkglogger.Logger) (*Agent, error) {
 		return nil, err
 	}
 
-	wgMgr := wireguard.NewManager(logger, true) // dry-run for now
+	wgMgr := wireguard.NewManager(logger, *cfg.DryRun)
 
 	return &Agent{
 		cfg:    cfg,
@@ -83,7 +83,7 @@ func (a *Agent) Start(ctx context.Context) error {
 
 	// Step 4: Register as peer in Discovery
 	a.logger.Info("Announcing to Discovery Service...")
-	if err := a.client.RegisterPeer(ctx, a.token, a.vpnIP, 51820); err != nil {
+	if err := a.client.RegisterPeer(ctx, a.token, a.vpnIP, int32(a.cfg.WireGuardPort)); err != nil {
 		return err
 	}
 	a.logger.Info("Peer registered")
@@ -113,12 +113,25 @@ func (a *Agent) Start(ctx context.Context) error {
 		DNS:        dns,
 	}
 
-	// Add discovered peers to WireGuard config
+	// Add discovered peers to WireGuard config (fetch their public keys)
 	for _, p := range peers {
+		if p.NodeId == a.nodeID {
+			continue // skip ourselves
+		}
+
+		peerKey, err := a.client.GetPeerPublicKey(ctx, p.NodeId)
+		if err != nil {
+			a.logger.Warnf("Failed to get public key for %s: %v", p.NodeId, err)
+			continue
+		}
+
+		endpoint := fmt.Sprintf("%s:%d", p.IpAddress, p.Port)
 		wgCfg.Peers = append(wgCfg.Peers, wireguard.PeerConfig{
-			PublicKey:  p.NodeId,
+			PublicKey:  peerKey,
+			Endpoint:   endpoint,
 			AllowedIPs: netCfg.NetworkCidr,
 		})
+		a.logger.Infof("  Added peer %s @ %s", p.NodeId, endpoint)
 	}
 
 	if err := a.wg_mgr.Configure(wgCfg); err != nil {

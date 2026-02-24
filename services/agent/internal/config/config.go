@@ -13,6 +13,8 @@ type Config struct {
 	ConfigAddr    string `yaml:"config_addr"`
 	LogLevel      string `yaml:"log_level"`
 	Heartbeat     int    `yaml:"heartbeat_interval"`
+	DryRun        *bool  `yaml:"dry_run"`
+	WireGuardPort int    `yaml:"wireguard_port"`
 }
 
 func Load(path string) (*Config, error) {
@@ -47,6 +49,13 @@ func (c *Config) setDefaults() {
 	}
 	if c.Heartbeat == 0 {
 		c.Heartbeat = 25
+	}
+	if c.DryRun == nil {
+		t := true
+		c.DryRun = &t
+	}
+	if c.WireGuardPort == 0 {
+		c.WireGuardPort = 51820
 	}
 }
 

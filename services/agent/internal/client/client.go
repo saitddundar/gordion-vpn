@@ -75,6 +75,17 @@ func (c *Client) Register(ctx context.Context, publicKey string) (nodeID, token 
 	return resp.NodeId, resp.Token, nil
 }
 
+// fetches a peer's WireGuard public key from Identity Service
+func (c *Client) GetPeerPublicKey(ctx context.Context, nodeID string) (string, error) {
+	resp, err := c.identity.GetPublicKey(ctx, &identityv1.GetPublicKeyRequest{
+		NodeId: nodeID,
+	})
+	if err != nil {
+		return "", fmt.Errorf("get public key failed: %w", err)
+	}
+	return resp.PublicKey, nil
+}
+
 // fetches network settings (CIDR, MTU, DNS) from Config Service
 func (c *Client) GetNetworkConfig(ctx context.Context, token string) (*configv1.GetConfigResponse, error) {
 	resp, err := c.config.GetConfig(ctx, &configv1.GetConfigRequest{

@@ -4,7 +4,9 @@ identity_addr: "localhost:8001"
 discovery_addr: "localhost:8002"
 config_addr: "localhost:8003"
 
-public_key: ""
-
 log_level: "debug"
 heartbeat_interval: 25
+
+# WireGuard
+dry_run: true          # set to false for real tunnel (requires WireGuard installed)
+wireguard_port: 51820
