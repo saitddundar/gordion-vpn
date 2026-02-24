@@ -36,7 +36,8 @@ func TestAgentFlow(t *testing.T) {
 	var nodeID, token string
 	t.Run("Register", func(t *testing.T) {
 		kp, _ := wireguard.GenerateKeyPair()
-		nodeID, token, err = c.Register(ctx, kp.PublicKey)
+		var expiresAt int64
+		nodeID, token, expiresAt, err = c.Register(ctx, kp.PublicKey)
 		if err != nil {
 			t.Fatalf("Register failed: %v", err)
 		}
@@ -45,6 +46,7 @@ func TestAgentFlow(t *testing.T) {
 		}
 		t.Logf("[ok] NodeID: %s", nodeID)
 		t.Logf("[ok] Token: %s...", token[:16])
+		t.Logf("[ok] ExpiresAt: %d", expiresAt)
 	})
 
 	// Step 3: Get network config

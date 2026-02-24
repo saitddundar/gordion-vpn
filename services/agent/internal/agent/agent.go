@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -19,9 +20,11 @@ type Agent struct {
 	wg_mgr *wireguard.Manager
 	logger pkglogger.Logger
 
-	nodeID string
-	token  string
-	vpnIP  string
+	nodeID    string
+	token     string
+	vpnIP     string
+	publicKey string
+	expiresAt int64
 
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
@@ -52,17 +55,20 @@ func (a *Agent) Start(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	a.publicKey = keyPair.PublicKey
 	a.logger.Infof("Public key: %s", keyPair.PublicKey[:16]+"...")
 
-	// Step 1: Register with Identity Service
+	// Step 1: Register with Identity Service (with retry)
 	a.logger.Info("Registering with Identity Service...")
-	nodeID, token, err := a.client.Register(ctx, keyPair.PublicKey)
+	nodeID, token, expiresAt, err := a.retryRegister(ctx, keyPair.PublicKey)
 	if err != nil {
 		return err
 	}
 	a.nodeID = nodeID
 	a.token = token
-	a.logger.Infof("Registered as %s", a.nodeID)
+	a.expiresAt = expiresAt
+	a.logger.Infof("Registered as %s (token expires: %s)", a.nodeID,
+		time.Unix(a.expiresAt, 0).Format("15:04:05"))
 
 	// Step 2: Get network config
 	a.logger.Info("Fetching network config...")
@@ -138,9 +144,10 @@ func (a *Agent) Start(ctx context.Context) error {
 		a.logger.Errorf("WireGuard config failed: %v", err)
 	}
 
-	// Step 7: Start heartbeat loop
-	a.wg.Add(1)
+	// Step 7: Start background loops
+	a.wg.Add(2)
 	go a.heartbeatLoop(ctx)
+	go a.tokenRefreshLoop(ctx)
 
 	a.logger.Info("Agent is running")
 	return nil
@@ -174,22 +181,85 @@ func (a *Agent) Stop() {
 	a.logger.Info("Agent stopped")
 }
 
+// heartbeatLoop sends periodic heartbeats with retry
 func (a *Agent) heartbeatLoop(ctx context.Context) {
 	defer a.wg.Done()
 
 	ticker := time.NewTicker(time.Duration(a.cfg.Heartbeat) * time.Second)
 	defer ticker.Stop()
 
+	failCount := 0
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
 			if err := a.client.Heartbeat(ctx, a.token); err != nil {
-				a.logger.Errorf("Heartbeat failed: %v", err)
+				failCount++
+				backoff := time.Duration(math.Min(float64(failCount*failCount), 60)) * time.Second
+				a.logger.Errorf("Heartbeat failed (%d): %v, retry in %s", failCount, err, backoff)
+				time.Sleep(backoff)
 			} else {
+				failCount = 0
 				a.logger.Debug("Heartbeat sent")
 			}
 		}
 	}
+}
+
+// tokenRefreshLoop re-registers before token expires
+func (a *Agent) tokenRefreshLoop(ctx context.Context) {
+	defer a.wg.Done()
+
+	for {
+		// Calculate when to refresh (80% of token lifetime)
+		remaining := time.Until(time.Unix(a.expiresAt, 0))
+		refreshIn := time.Duration(float64(remaining) * 0.8)
+		if refreshIn < 30*time.Second {
+			refreshIn = 30 * time.Second
+		}
+
+		a.logger.Infof("Token refresh scheduled in %s", refreshIn.Round(time.Second))
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(refreshIn):
+			a.logger.Info("Refreshing token...")
+			_, token, expiresAt, err := a.retryRegister(ctx, a.publicKey)
+			if err != nil {
+				a.logger.Errorf("Token refresh failed: %v", err)
+				continue
+			}
+			a.token = token
+			a.expiresAt = expiresAt
+			a.logger.Infof("Token refreshed (expires: %s)",
+				time.Unix(a.expiresAt, 0).Format("15:04:05"))
+		}
+	}
+}
+
+// retryRegister attempts registration with exponential backoff
+func (a *Agent) retryRegister(ctx context.Context, publicKey string) (string, string, int64, error) {
+	maxRetries := 5
+	for i := 0; i < maxRetries; i++ {
+		nodeID, token, expiresAt, err := a.client.Register(ctx, publicKey)
+		if err == nil {
+			return nodeID, token, expiresAt, nil
+		}
+
+		if i == maxRetries-1 {
+			return "", "", 0, fmt.Errorf("registration failed after %d attempts: %w", maxRetries, err)
+		}
+
+		backoff := time.Duration(math.Pow(2, float64(i))) * time.Second
+		a.logger.Warnf("Register attempt %d failed: %v, retrying in %s", i+1, err, backoff)
+
+		select {
+		case <-ctx.Done():
+			return "", "", 0, ctx.Err()
+		case <-time.After(backoff):
+		}
+	}
+	return "", "", 0, fmt.Errorf("unreachable")
 }

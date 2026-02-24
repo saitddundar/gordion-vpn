@@ -64,15 +64,15 @@ func (c *Client) Close() {
 }
 
 // sends public key to Identity Service and gets back a token
-func (c *Client) Register(ctx context.Context, publicKey string) (nodeID, token string, err error) {
+func (c *Client) Register(ctx context.Context, publicKey string) (nodeID, token string, expiresAt int64, err error) {
 	resp, err := c.identity.RegisterNode(ctx, &identityv1.RegisterNodeRequest{
 		PublicKey: publicKey,
 		Version:   "1.0.0",
 	})
 	if err != nil {
-		return "", "", fmt.Errorf("register failed: %w", err)
+		return "", "", 0, fmt.Errorf("register failed: %w", err)
 	}
-	return resp.NodeId, resp.Token, nil
+	return resp.NodeId, resp.Token, resp.ExpiresAt, nil
 }
 
 // fetches a peer's WireGuard public key from Identity Service
