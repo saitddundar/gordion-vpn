@@ -1,10 +1,30 @@
 # Gordion VPN
 
-A decentralized, peer-to-peer VPN built with microservices architecture and WireGuard.
+[![Go Version](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go)](https://go.dev/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Status](https://img.shields.io/badge/status-experimental-orange)](#development-status)
+
+A decentralized, peer-to-peer VPN built with a microservice control plane and a WireGuard-based data plane.
 
 ## Overview
 
-Gordion VPN is a decentralized VPN that turns users into both clients and relay nodes. Built with a modern microservices architecture, it provides secure, scalable, and distributed VPN connectivity using WireGuard for tunnel encryption.
+Gordion VPN turns participating nodes into both clients and relay peers. It uses a modern microservices control plane (Identity, Discovery, Config) to coordinate a fully encrypted WireGuard mesh, aiming for secure, scalable, and geographically distributed VPN connectivity.
+
+## Key Features
+
+- **Decentralized topology**: Each node can act as both a client and a relay, reducing reliance on a single choke point.
+- **WireGuard data plane**: Curve25519-based key exchange with a minimal, modern VPN protocol.
+- **Microservice control plane**: Identity, discovery, and configuration services are isolated and independently deployable.
+- **Strong authentication**: JWT-based node identities with inter-service token validation.
+- **Observability by default**: Prometheus metrics, structured logging, and trace ID propagation across services.
+- **Resilience focus**: Health checks, exponential backoff, graceful shutdown, and rate limiting integrated into the core services.
+
+## Use Cases
+
+- **Self-hosted, privacy-focused VPN** where you control both the control plane and the data plane.
+- **Mesh-style connectivity** between multiple regions, offices, or homelabs without central VPN appliances.
+- **Experimentation platform** for distributed systems concepts: service discovery, tracing, rate limiting, and resilience patterns.
+- **Educational reference** for a production-style Go microservices stack with gRPC, WireGuard, and observability tooling.
 
 ## Architecture
 
@@ -22,6 +42,7 @@ Gordion VPN is a decentralized VPN that turns users into both clients and relay 
 │  ┌──────────────────────────────────────────────────────┐    │
 │  │            Prometheus + Grafana                      │    │
 │  │         Distributed Tracing (trace_id)               │    │
+│  │         Rate Limiting & Health Checks                │    │
 │  └──────────────────────────────────────────────────────┘    │
 └──────────────────────────────────────────────────────────────┘
            ↑                 ↑                   ↑
@@ -58,6 +79,8 @@ Gordion VPN is a decentralized VPN that turns users into both clients and relay 
 | **Grafana** | 3000 | Complete | Metrics visualization and dashboards |
 | **Distributed Tracing** | - | Complete | Cross-service trace_id propagation |
 | **Structured Logging** | - | Complete | Request-scoped logging with request_id |
+| **Rate Limiting** | - | Complete | Per-IP sliding window request limiting |
+| **Health Checks** | - | Complete | gRPC standard health checking protocol |
 
 ## Project Structure
 
@@ -141,8 +164,21 @@ cd services/discovery && ./discovery-server.exe
 cd services/config    && ./config-server.exe
 
 # Start the agent
-cd services/agent && ./agent.exe
+make build-agent
+./services/agent/agent.exe
 ```
+
+### Config Hot-Reload
+
+The **Config Service** supports zero-downtime configuration updates via `SIGHUP`:
+
+```bash
+# Modify configs/config.dev.yaml
+# Then send SIGHUP to the config service process
+kill -SIGHUP <pid>
+```
+
+The service will re-read the configuration and increment the **Config Version**, which agents will automatically detect on their next refresh.
 
 ### Environment Variables
 
@@ -176,12 +212,11 @@ Discovery → Identity: ValidateToken(token) ← inter-service auth
 
 ### Security Layers
 
-| Layer | Implementation |
-|-------|---------------|
 | Node Authentication | JWT tokens via Identity Service |
 | Inter-Service Auth | Token validation between services |
 | Transport Security | Optional TLS for gRPC (cert generation via `scripts/gen-certs.ps1`) |
 | Tunnel Encryption | WireGuard with Curve25519 key exchange |
+| Abuse Prevention | Per-IP Rate Limiting (100 req/min default) |
 | Secret Management | Environment variable overrides, `.env` support |
 
 ## Agent Lifecycle
@@ -189,19 +224,23 @@ Discovery → Identity: ValidateToken(token) ← inter-service auth
 ```
 Start:
   1. Generate WireGuard keypair (Curve25519)
-  2. Register with Identity Service → get token
-  3. Fetch network config from Config Service
+  2. Register with Identity Service (with **Exponential Backoff**) → get token
+  3. Fetch network config (supports **Config Versioning**)
   4. Request VPN IP address
   5. Announce to Discovery Service
   6. Discover other peers
-  7. Configure WireGuard tunnel
-  8. Start heartbeat loop (every 25s)
+  7. Fetch peer public keys from Identity Service
+  8. Configure WireGuard tunnel (real tunnel or dry-run)
+  9. Start background loops:
+     - **Heartbeat Loop**: Keeps peer status alive
+     - **Token Refresh Loop**: Automatically re-registers at 80% of token life
 
 Shutdown (Ctrl+C):
-  1. Stop heartbeat
-  2. Release VPN IP
-  3. Tear down WireGuard tunnel
-  4. Close connections
+  1. **Graceful Shutdown**: Wait for in-flight requests (10s timeout)
+  2. Stop heartbeat & refresh loops
+  3. Release VPN IP from Config Service
+  4. Tear down WireGuard tunnel
+  5. Close all gRPC connections
 ```
 
 ## Observability
@@ -306,7 +345,7 @@ cd services/agent     && go test -v -count=1 ./test/...
 
 | Method | Request | Response |
 |--------|---------|----------|
-| `GetConfig` | `token` | `network_cidr`, `mtu`, `dns_servers` |
+| `GetConfig` | `token`, `config_version` | `network_cidr`, `mtu`, `dns_servers`, `config_version`, `up_to_date` |
 | `RequestIP` | `token`, `node_id` | `ip_address`, `subnet_mask`, `gateway` |
 | `ReleaseIP` | `token`, `node_id`, `ip_address` | `success`, `message` |
 
@@ -346,6 +385,14 @@ cd services/agent     && go test -v -count=1 ./test/...
 
 ### Sprint 6: Security & Observability - Complete
 - Inter-service authentication, optional TLS, secret management, structured logging, distributed tracing
+
+### Sprint 7: Resilience & Polish - Complete
+- gRPC Health Check protocol integration
+- Per-IP Rate Limiting (sliding window)
+- Agent: Exponential backoff retries & Token refresh loop
+- Config: SIGHUP hot-reload & Version-based caching
+- Global: Graceful shutdown with timeout (10s)
+- Makefile improvements & project audit fixes
 
 ## License
 
