@@ -19,12 +19,15 @@ service ConfigService {
 // GetConfig Messages
 message GetConfigRequest {
   string token = 1;         // Auth token
+  int32 config_version = 2; // Client's current config version (0 = first request)
 }
 
 message GetConfigResponse {
   string network_cidr = 1;  // VPN network CIDR (e.g., "10.8.0.0/16")
   int32 mtu = 2;            // Maximum transmission unit
   repeated string dns_servers = 3;  // DNS servers for VPN
+  int32 config_version = 4; // Current config version
+  bool up_to_date = 5;      // True if client already has latest config
 }
 
 // RequestIP Messages

@@ -14,20 +14,22 @@ import (
 
 type ConfigHandler struct {
 	configv1.UnimplementedConfigServiceServer
-	allocator   *allocator.Allocator
-	authClient  *auth.Client
-	networkCIDR string
-	mtu         int32
-	dnsServers  []string
+	allocator     *allocator.Allocator
+	authClient    *auth.Client
+	networkCIDR   string
+	mtu           int32
+	dnsServers    []string
+	configVersion int32
 }
 
 func NewConfigHandler(alloc *allocator.Allocator, authClient *auth.Client, networkCIDR string, mtu int, dnsServers []string) *ConfigHandler {
 	return &ConfigHandler{
-		allocator:   alloc,
-		authClient:  authClient,
-		networkCIDR: networkCIDR,
-		mtu:         int32(mtu),
-		dnsServers:  dnsServers,
+		allocator:     alloc,
+		authClient:    authClient,
+		networkCIDR:   networkCIDR,
+		mtu:           int32(mtu),
+		dnsServers:    dnsServers,
+		configVersion: 1,
 	}
 }
 
@@ -41,11 +43,29 @@ func (h *ConfigHandler) GetConfig(ctx context.Context, req *configv1.GetConfigRe
 		return nil, status.Errorf(codes.Unauthenticated, "auth failed: %v", err)
 	}
 
+	// Version check: if client already has latest, skip sending full config
+	if req.ConfigVersion > 0 && req.ConfigVersion >= h.configVersion {
+		return &configv1.GetConfigResponse{
+			ConfigVersion: h.configVersion,
+			UpToDate:      true,
+		}, nil
+	}
+
 	return &configv1.GetConfigResponse{
-		NetworkCidr: h.networkCIDR,
-		Mtu:         h.mtu,
-		DnsServers:  h.dnsServers,
+		NetworkCidr:   h.networkCIDR,
+		Mtu:           h.mtu,
+		DnsServers:    h.dnsServers,
+		ConfigVersion: h.configVersion,
+		UpToDate:      false,
 	}, nil
+}
+
+// hot-swaps network config (called on SIGHUP)
+func (h *ConfigHandler) ReloadConfig(networkCIDR string, mtu int, dnsServers []string) {
+	h.networkCIDR = networkCIDR
+	h.mtu = int32(mtu)
+	h.dnsServers = dnsServers
+	h.configVersion++
 }
 
 func (h *ConfigHandler) RequestIP(ctx context.Context, req *configv1.RequestIPRequest) (*configv1.RequestIPResponse, error) {
@@ -96,7 +116,7 @@ func (h *ConfigHandler) ReleaseIP(ctx context.Context, req *configv1.ReleaseIPRe
 	}, nil
 }
 
-// resolveNodeID validates token via Identity Service or falls back
+// validates token via Identity Service or falls back
 func (h *ConfigHandler) resolveNodeID(ctx context.Context, token string) (string, error) {
 	if h.authClient != nil {
 		return h.authClient.ValidateToken(ctx, token)

@@ -24,7 +24,8 @@ const (
 // GetConfig Messages
 type GetConfigRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Token         string                 `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"` // Auth token
+	Token         string                 `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`                                       // Auth token
+	ConfigVersion int32                  `protobuf:"varint,2,opt,name=config_version,json=configVersion,proto3" json:"config_version,omitempty"` // Client's current config version (0 = first request)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -66,11 +67,20 @@ func (x *GetConfigRequest) GetToken() string {
 	return ""
 }
 
+func (x *GetConfigRequest) GetConfigVersion() int32 {
+	if x != nil {
+		return x.ConfigVersion
+	}
+	return 0
+}
+
 type GetConfigResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	NetworkCidr   string                 `protobuf:"bytes,1,opt,name=network_cidr,json=networkCidr,proto3" json:"network_cidr,omitempty"` // VPN network CIDR (e.g., "10.8.0.0/16")
-	Mtu           int32                  `protobuf:"varint,2,opt,name=mtu,proto3" json:"mtu,omitempty"`                                   // Maximum transmission unit
-	DnsServers    []string               `protobuf:"bytes,3,rep,name=dns_servers,json=dnsServers,proto3" json:"dns_servers,omitempty"`    // DNS servers for VPN
+	NetworkCidr   string                 `protobuf:"bytes,1,opt,name=network_cidr,json=networkCidr,proto3" json:"network_cidr,omitempty"`        // VPN network CIDR (e.g., "10.8.0.0/16")
+	Mtu           int32                  `protobuf:"varint,2,opt,name=mtu,proto3" json:"mtu,omitempty"`                                          // Maximum transmission unit
+	DnsServers    []string               `protobuf:"bytes,3,rep,name=dns_servers,json=dnsServers,proto3" json:"dns_servers,omitempty"`           // DNS servers for VPN
+	ConfigVersion int32                  `protobuf:"varint,4,opt,name=config_version,json=configVersion,proto3" json:"config_version,omitempty"` // Current config version
+	UpToDate      bool                   `protobuf:"varint,5,opt,name=up_to_date,json=upToDate,proto3" json:"up_to_date,omitempty"`              // True if client already has latest config
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -124,6 +134,20 @@ func (x *GetConfigResponse) GetDnsServers() []string {
 		return x.DnsServers
 	}
 	return nil
+}
+
+func (x *GetConfigResponse) GetConfigVersion() int32 {
+	if x != nil {
+		return x.ConfigVersion
+	}
+	return 0
+}
+
+func (x *GetConfigResponse) GetUpToDate() bool {
+	if x != nil {
+		return x.UpToDate
+	}
+	return false
 }
 
 // RequestIP Messages
@@ -356,14 +380,18 @@ var File_config_v1_config_proto protoreflect.FileDescriptor
 
 const file_config_v1_config_proto_rawDesc = "" +
 	"\n" +
-	"\x16config/v1/config.proto\x12\tconfig.v1\"(\n" +
+	"\x16config/v1/config.proto\x12\tconfig.v1\"O\n" +
 	"\x10GetConfigRequest\x12\x14\n" +
-	"\x05token\x18\x01 \x01(\tR\x05token\"i\n" +
+	"\x05token\x18\x01 \x01(\tR\x05token\x12%\n" +
+	"\x0econfig_version\x18\x02 \x01(\x05R\rconfigVersion\"\xae\x01\n" +
 	"\x11GetConfigResponse\x12!\n" +
 	"\fnetwork_cidr\x18\x01 \x01(\tR\vnetworkCidr\x12\x10\n" +
 	"\x03mtu\x18\x02 \x01(\x05R\x03mtu\x12\x1f\n" +
 	"\vdns_servers\x18\x03 \x03(\tR\n" +
-	"dnsServers\"A\n" +
+	"dnsServers\x12%\n" +
+	"\x0econfig_version\x18\x04 \x01(\x05R\rconfigVersion\x12\x1c\n" +
+	"\n" +
+	"up_to_date\x18\x05 \x01(\bR\bupToDate\"A\n" +
 	"\x10RequestIPRequest\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x12\x17\n" +
 	"\anode_id\x18\x02 \x01(\tR\x06nodeId\"m\n" +

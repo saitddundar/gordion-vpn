@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
@@ -121,7 +122,19 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	logger.Info("Shutting down...")
-	grpcServer.GracefulStop()
-	logger.Info("Server stopped")
+	logger.Info("Shutting down gracefully (10s timeout)...")
+	stopped := make(chan struct{})
+	go func() {
+		grpcServer.GracefulStop()
+		close(stopped)
+	}()
+
+	timer := time.NewTimer(10 * time.Second)
+	select {
+	case <-stopped:
+		logger.Info("Server stopped gracefully")
+	case <-timer.C:
+		logger.Warn("Graceful shutdown timed out, forcing stop")
+		grpcServer.Stop()
+	}
 }

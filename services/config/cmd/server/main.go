@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
@@ -24,8 +26,10 @@ import (
 	grpchandler "github.com/saitddundar/gordion-vpn/services/config/internal/grpc"
 )
 
+const configPath = "../../configs/config.dev.yaml"
+
 func main() {
-	cfg, err := config.Load("../../configs/config.dev.yaml")
+	cfg, err := config.Load(configPath)
 	if err != nil {
 		fmt.Printf("Failed to load config: %v\n", err)
 		os.Exit(1)
@@ -58,7 +62,7 @@ func main() {
 
 	handler := grpchandler.NewConfigHandler(alloc, authClient, cfg.NetworkCIDR, cfg.MTU, cfg.DNSServers)
 
-	// Create gRPC server with metrics interceptor and optional TLS
+	// Create gRPC server with interceptors
 	serverOpts := []grpc.ServerOption{
 		grpc.ChainUnaryInterceptor(
 			tracing.ServerInterceptor(logger, "config"),
@@ -114,11 +118,40 @@ func main() {
 		}
 	}()
 
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
+	// SIGHUP → reload config, SIGINT/SIGTERM → shutdown
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 
-	logger.Info("Shutting down...")
-	grpcServer.GracefulStop()
-	logger.Info("Server stopped")
+	for sig := range sigCh {
+		if sig == syscall.SIGHUP {
+			logger.Info("Received SIGHUP, reloading config...")
+			newCfg, err := config.Load(configPath)
+			if err != nil {
+				logger.Errorf("Config reload failed: %v", err)
+				continue
+			}
+			handler.ReloadConfig(newCfg.NetworkCIDR, newCfg.MTU, newCfg.DNSServers)
+			logger.Infof("Config reloaded (version bumped)")
+			continue
+		}
+
+		// SIGINT or SIGTERM → graceful shutdown with timeout
+		logger.Info("Shutting down gracefully (10s timeout)...")
+		stopped := make(chan struct{})
+		go func() {
+			grpcServer.GracefulStop()
+			close(stopped)
+		}()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		select {
+		case <-stopped:
+			logger.Info("Server stopped gracefully")
+		case <-ctx.Done():
+			logger.Warn("Graceful shutdown timed out, forcing stop")
+			grpcServer.Stop()
+		}
+		cancel()
+		return
+	}
 }
