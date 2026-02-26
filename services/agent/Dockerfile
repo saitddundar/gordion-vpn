@@ -2,12 +2,7 @@ FROM golang:1.25-alpine AS builder
 
 WORKDIR /build
 
-COPY go.work go.work.sum ./
-COPY go.mod go.sum ./
-COPY pkg/ pkg/
-COPY configs/ configs/
-COPY services/agent/ services/agent/
-
+COPY . .
 RUN cd services/agent && go build -o /agent ./cmd/agent
 
 FROM alpine:3.21

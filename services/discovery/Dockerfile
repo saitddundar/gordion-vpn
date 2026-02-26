@@ -4,9 +4,7 @@ FROM golang:1.25-alpine AS builder
 WORKDIR /app
 
 # Copy workspace files
-COPY go.work go.work.sum ./
-COPY pkg/ pkg/
-COPY services/discovery/ services/discovery/
+COPY . .
 
 # Build
 RUN cd services/discovery && go build -o /discovery-server ./cmd/server

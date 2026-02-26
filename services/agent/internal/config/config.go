@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 
 	"gopkg.in/yaml.v3"
 )
@@ -72,5 +73,15 @@ func (c *Config) overrideFromEnv() {
 	}
 	if v := os.Getenv("CONFIG_ADDR"); v != "" {
 		c.ConfigAddr = v
+	}
+	if v := os.Getenv("P2P_PORT"); v != "" {
+		if port, err := strconv.Atoi(v); err == nil {
+			c.P2PPort = port
+		}
+	}
+	if v := os.Getenv("WIREGUARD_PORT"); v != "" {
+		if port, err := strconv.Atoi(v); err == nil {
+			c.WireGuardPort = port
+		}
 	}
 }

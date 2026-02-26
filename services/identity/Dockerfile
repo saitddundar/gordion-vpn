@@ -4,9 +4,7 @@ FROM golang:1.25-alpine AS builder
 WORKDIR /app
 
 # Copy workspace files
-COPY go.work go.work.sum ./
-COPY pkg/ pkg/
-COPY services/identity/ services/identity/
+COPY . .
 
 # Build
 RUN cd services/identity && go build -o /identity-server ./cmd/server
