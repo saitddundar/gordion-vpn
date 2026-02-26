@@ -34,17 +34,26 @@ func (s *Storage) Ping() error {
 	return s.db.Ping()
 }
 
-func (s *Storage) CreateNode(ctx context.Context, publicKey, version string) (*Node, error) {
+func (s *Storage) CreateNode(ctx context.Context, publicKey, version, peerID string) (*Node, error) {
+	var pID *string
+	if peerID != "" {
+		pID = &peerID
+	}
+
 	query := `
-		INSERT INTO nodes (public_key, version)
-		VALUES ($1, $2)
-		RETURNING id, public_key, version, created_at, updated_at
+		INSERT INTO nodes (public_key, version, peer_id)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (public_key) DO UPDATE 
+		SET version = EXCLUDED.version,
+		    peer_id = EXCLUDED.peer_id,
+		    updated_at = NOW()
+		RETURNING id, public_key, version, peer_id, created_at, updated_at
 	`
 
 	var node Node
-	err := s.db.GetContext(ctx, &node, query, publicKey, version)
+	err := s.db.GetContext(ctx, &node, query, publicKey, version, pID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create node: %w", err)
+		return nil, fmt.Errorf("failed to create/update node: %w", err)
 	}
 
 	return &node, nil

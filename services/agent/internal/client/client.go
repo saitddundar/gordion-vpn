@@ -64,10 +64,11 @@ func (c *Client) Close() {
 }
 
 // sends public key to Identity Service and gets back a token
-func (c *Client) Register(ctx context.Context, publicKey string) (nodeID, token string, expiresAt int64, err error) {
+func (c *Client) Register(ctx context.Context, publicKey, peerID string) (nodeID, token string, expiresAt int64, err error) {
 	resp, err := c.identity.RegisterNode(ctx, &identityv1.RegisterNodeRequest{
 		PublicKey: publicKey,
 		Version:   "1.0.0",
+		PeerId:    peerID,
 	})
 	if err != nil {
 		return "", "", 0, fmt.Errorf("register failed: %w", err)
@@ -123,11 +124,15 @@ func (c *Client) ReleaseIP(ctx context.Context, token, nodeID, ip string) error 
 }
 
 // announces this node to the Discovery Service
-func (c *Client) RegisterPeer(ctx context.Context, token, ip string, port int32) error {
+func (c *Client) RegisterPeer(ctx context.Context, token, ip string, port int32, peerID string, p2pAddrs []string) error {
 	_, err := c.discovery.RegisterPeer(ctx, &discoveryv1.RegisterPeerRequest{
 		Token:     token,
 		IpAddress: ip,
 		Port:      port,
+		Region:    "global",
+		Bandwidth: 1000000,
+		PeerId:    peerID,
+		P2PAddrs:  p2pAddrs,
 	})
 	if err != nil {
 		return fmt.Errorf("register peer failed: %w", err)

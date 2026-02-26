@@ -11,14 +11,16 @@ import (
 	pkglogger "github.com/saitddundar/gordion-vpn/pkg/logger"
 	"github.com/saitddundar/gordion-vpn/services/agent/internal/client"
 	"github.com/saitddundar/gordion-vpn/services/agent/internal/config"
+	"github.com/saitddundar/gordion-vpn/services/agent/internal/p2p"
 	"github.com/saitddundar/gordion-vpn/services/agent/internal/wireguard"
 )
 
 type Agent struct {
-	cfg    *config.Config
-	client *client.Client
-	wg_mgr *wireguard.Manager
-	logger pkglogger.Logger
+	cfg     *config.Config
+	client  *client.Client
+	wg_mgr  *wireguard.Manager
+	p2p_mgr *p2p.Manager
+	logger  pkglogger.Logger
 
 	nodeID    string
 	token     string
@@ -49,7 +51,15 @@ func New(cfg *config.Config, logger pkglogger.Logger) (*Agent, error) {
 func (a *Agent) Start(ctx context.Context) error {
 	ctx, a.cancel = context.WithCancel(ctx)
 
-	// Step 0: Generate WireGuard keypair
+	// Step 0: Start P2P Host
+	a.logger.Info("Starting P2P Host...")
+	p2pMgr, err := p2p.New(ctx, a.logger, a.cfg.P2PPort)
+	if err != nil {
+		return fmt.Errorf("failed to start p2p host: %w", err)
+	}
+	a.p2p_mgr = p2pMgr
+
+	// Step 0.5: Generate WireGuard keypair
 	a.logger.Info("Generating WireGuard keypair...")
 	keyPair, err := wireguard.GenerateKeyPair()
 	if err != nil {
@@ -89,7 +99,7 @@ func (a *Agent) Start(ctx context.Context) error {
 
 	// Step 4: Register as peer in Discovery
 	a.logger.Info("Announcing to Discovery Service...")
-	if err := a.client.RegisterPeer(ctx, a.token, a.vpnIP, int32(a.cfg.WireGuardPort)); err != nil {
+	if err := a.client.RegisterPeer(ctx, a.token, a.vpnIP, int32(a.cfg.WireGuardPort), a.p2p_mgr.PeerID(), a.p2p_mgr.Multiaddrs()); err != nil {
 		return err
 	}
 	a.logger.Info("Peer registered")
@@ -177,6 +187,12 @@ func (a *Agent) Stop() {
 		a.logger.Errorf("WireGuard down failed: %v", err)
 	}
 
+	if a.p2p_mgr != nil {
+		if err := a.p2p_mgr.Close(); err != nil {
+			a.logger.Errorf("P2P down failed: %v", err)
+		}
+	}
+
 	a.client.Close()
 	a.logger.Info("Agent stopped")
 }
@@ -243,7 +259,7 @@ func (a *Agent) tokenRefreshLoop(ctx context.Context) {
 func (a *Agent) retryRegister(ctx context.Context, publicKey string) (string, string, int64, error) {
 	maxRetries := 5
 	for i := 0; i < maxRetries; i++ {
-		nodeID, token, expiresAt, err := a.client.Register(ctx, publicKey)
+		nodeID, token, expiresAt, err := a.client.Register(ctx, publicKey, a.p2p_mgr.PeerID())
 		if err == nil {
 			return nodeID, token, expiresAt, nil
 		}

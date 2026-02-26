@@ -47,6 +47,8 @@ func (h *DiscoveryHandler) RegisterPeer(ctx context.Context, req *discoveryv1.Re
 		PublicKey: "",
 		Endpoint:  req.IpAddress + ":" + fmt.Sprint(req.Port),
 		Version:   "1.0.0",
+		PeerID:    req.PeerId,
+		P2PAddrs:  req.P2PAddrs,
 	}
 
 	if err := h.registry.Register(ctx, peer); err != nil {

@@ -10,6 +10,7 @@ type Node struct {
 	ID        uuid.UUID `db:"id"`
 	PublicKey string    `db:"public_key"`
 	Version   string    `db:"version"`
+	PeerID    *string   `db:"peer_id"`
 	CreatedAt time.Time `db:"created_at"`
 	UpdatedAt time.Time `db:"updated_at"`
 }

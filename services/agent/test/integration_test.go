@@ -37,7 +37,7 @@ func TestAgentFlow(t *testing.T) {
 	t.Run("Register", func(t *testing.T) {
 		kp, _ := wireguard.GenerateKeyPair()
 		var expiresAt int64
-		nodeID, token, expiresAt, err = c.Register(ctx, kp.PublicKey)
+		nodeID, token, expiresAt, err = c.Register(ctx, kp.PublicKey, "test-peer-id")
 		if err != nil {
 			t.Fatalf("Register failed: %v", err)
 		}
@@ -74,7 +74,7 @@ func TestAgentFlow(t *testing.T) {
 
 	// Step 5: Register as peer
 	t.Run("RegisterPeer", func(t *testing.T) {
-		err := c.RegisterPeer(ctx, token, vpnIP, 51820)
+		err := c.RegisterPeer(ctx, token, vpnIP, 51820, "test-peer-id", []string{"/ip4/127.0.0.1/tcp/4001/p2p/test-peer-id"})
 		if err != nil {
 			t.Fatalf("RegisterPeer failed: %v", err)
 		}

@@ -15,11 +15,13 @@ const (
 )
 
 type Peer struct {
-	NodeID    string `json:"node_id"`
-	PublicKey string `json:"public_key"`
-	Endpoint  string `json:"endpoint"`
-	Version   string `json:"version"`
-	LastSeen  int64  `json:"last_seen"`
+	NodeID    string   `json:"node_id"`
+	PublicKey string   `json:"public_key"`
+	Endpoint  string   `json:"endpoint"`
+	Version   string   `json:"version"`
+	PeerID    string   `json:"peer_id,omitempty"`
+	P2PAddrs  []string `json:"p2p_addrs,omitempty"`
+	LastSeen  int64    `json:"last_seen"`
 }
 
 type Registry struct {

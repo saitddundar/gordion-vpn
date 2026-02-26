@@ -25,11 +25,11 @@ func recordDBMetrics(operation string, fn func() error) error {
 }
 
 // Wrapper for CreateNode
-func (s *Storage) CreateNodeWithMetrics(ctx context.Context, publicKey, version string) (*Node, error) {
+func (s *Storage) CreateNodeWithMetrics(ctx context.Context, publicKey, version, peerID string) (*Node, error) {
 	var node *Node
 	err := recordDBMetrics("create_node", func() error {
 		var dbErr error
-		node, dbErr = s.CreateNode(ctx, publicKey, version)
+		node, dbErr = s.CreateNode(ctx, publicKey, version, peerID)
 		return dbErr
 	})
 	return node, err

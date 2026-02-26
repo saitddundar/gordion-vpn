@@ -24,9 +24,9 @@ func New(storage *storage.Storage, jwtSecret string, tokenDurationHours int) *Id
 	}
 }
 
-func (s *IdentityService) RegisterNode(ctx context.Context, publicKey, version string) (nodeID, token string, expiresAt int64, err error) {
+func (s *IdentityService) RegisterNode(ctx context.Context, publicKey, version, peerID string) (nodeID, token string, expiresAt int64, err error) {
 
-	node, err := s.storage.CreateNode(ctx, publicKey, version)
+	node, err := s.storage.CreateNode(ctx, publicKey, version, peerID)
 	if err != nil {
 		return "", "", 0, fmt.Errorf("failed to create node: %w", err)
 
