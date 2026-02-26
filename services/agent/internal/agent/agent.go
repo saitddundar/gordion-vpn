@@ -111,7 +111,21 @@ func (a *Agent) Start(ctx context.Context) error {
 	} else {
 		a.logger.Infof("Found %d peers", len(peers))
 		for _, p := range peers {
-			a.logger.Infof("  Peer: %s", p.NodeId)
+			a.logger.Infof("  Peer: %s (P2P ID: %s)", p.NodeId, p.PeerId)
+
+			// Step 5.5: Attempt P2P Handshake (Ping)
+			if p.NodeId != a.nodeID && len(p.P2PAddrs) > 0 {
+				go func(peerID string, addrs []string) {
+					// We just try the first valid address for the ping test
+					pInfo, err := a.p2p_mgr.GetPeerInfo(addrs[0])
+					if err == nil && pInfo != nil {
+						// Small timeout for ping attempt
+						pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+						defer cancel()
+						_ = a.p2p_mgr.ConnectAndPing(pingCtx, *pInfo)
+					}
+				}(p.PeerId, p.P2PAddrs)
+			}
 		}
 	}
 
