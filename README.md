@@ -168,6 +168,13 @@ make build-agent
 ./services/agent/agent.exe
 ```
 
+### Local Development Tips
+
+- Run `make proto` after editing any file under `api/proto` to regenerate gRPC stubs in `pkg/proto`.
+- Use `make tidy-all` to keep every module's `go.mod` in sync when you add a dependency.
+- Export `GORDION_ENV=dev` (or pass `--env dev`) so each service picks up the matching file in `configs/`.
+- `make docker-logs` (or `docker compose logs -f` inside `deployments/`) is handy for tailing Postgres/Redis while testing the agent.
+
 ### Config Hot-Reload
 
 The **Config Service** supports zero-downtime configuration updates via `SIGHUP`:
