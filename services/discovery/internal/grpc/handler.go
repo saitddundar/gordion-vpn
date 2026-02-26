@@ -3,6 +3,8 @@ package grpc
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -69,9 +71,25 @@ func (h *DiscoveryHandler) ListPeers(ctx context.Context, req *discoveryv1.ListP
 
 	var protoPeers []*discoveryv1.Peer
 	for _, p := range peers {
+		// Extract IP and Port from Endpoint (e.g., "10.0.0.5:51820")
+		var ipAddress string
+		var port int32
+		parts := strings.Split(p.Endpoint, ":")
+		if len(parts) == 2 {
+			ipAddress = parts[0]
+			if parsedPort, err := strconv.Atoi(parts[1]); err == nil {
+				port = int32(parsedPort)
+			}
+		}
+
 		protoPeers = append(protoPeers, &discoveryv1.Peer{
-			NodeId:   p.NodeID,
-			LastSeen: p.LastSeen,
+			NodeId:    p.NodeID,
+			IpAddress: ipAddress,
+			Port:      port,
+			Region:    p.Version,
+			PeerId:    p.PeerID,
+			P2PAddrs:  p.P2PAddrs,
+			LastSeen:  p.LastSeen,
 		})
 	}
 
