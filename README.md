@@ -397,9 +397,29 @@ cd services/agent     && go test -v -count=1 ./test/...
 - gRPC Health Check protocol integration
 - Per-IP Rate Limiting (sliding window)
 - Agent: Exponential backoff retries & Token refresh loop
-- Config: SIGHUP hot-reload & Version-based caching
+- Configuration: SIGHUP hot-reload & Version-based caching
 - Global: Graceful shutdown with timeout (10s)
 - Makefile improvements & project audit fixes
+
+## Challenges & Solutions
+
+During the development of Gordion VPN, we encountered several architectural and network-level challenges. Documenting these ensures the project evolves as an enterprise-grade solution rather than just a hobby project.
+
+### 1. The NAT Traversal Problem (Hole Punching)
+**Challenge:** 
+When two agents attempt to establish a P2P WireGuard tunnel, they usually reside behind strictly configured NATs (Network Address Translation) and residential routers. Direct communication drops because their `192.168.x.x` IPs are non-routable over the internet, and modem firewalls block incoming ping requests.
+
+**Solution:**
+Instead of relaying all traffic through a slow central proxy, we integrated the **libp2p** networking stack into the Agent:
+- **AutoNAT & STUN:** The agent runs an AutoNAT service on boot to discover its *true* public IP and port from the perspective of the outside world.
+- **Hole Punching:** We utilized `libp2p.EnableHolePunching()` to coordinate simultaneous connection attempts from both peers. By doing a quick P2P Handshake (Ping) *before* configuring the WireGuard tunnel, we punch a hole through the NAT, allowing the WireGuard UDP packets to flow directly (true P2P).
+
+### 2. Centralized vs Decentralized State
+**Challenge:** 
+If the central `Discovery Service` dies, newly joined agents wouldn't know who to connect to, creating a single point of failure.
+
+**Solution (Hybrid Architecture):** 
+Gordion VPN uses a **Hybrid Control Plane**. Centralized microservices (Identity, Config, Discovery) still handle global authentication, policy, and act as "Bootstrap Nodes". However, once the initial peer list is acquired, agents communicate directly via libp2p. In the future, we plan to migrate the peer registry state fully into a Distributed Hash Table (DHT), allowing the network to heal itself even if the central servers are offline.
 
 ## License
 

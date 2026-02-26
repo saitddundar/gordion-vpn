@@ -27,6 +27,11 @@ func New(ctx context.Context, logger pkglogger.Logger, listenPort int) (*Manager
 		libp2p.DefaultTransports,
 		libp2p.DefaultSecurity,
 		libp2p.DefaultMuxers,
+
+		// Setup NAT Traversal (Hole Punching & AutoNAT)
+		libp2p.NATPortMap(),         // Try to use UPnP and NAT-PMP to open ports in the router
+		libp2p.EnableNATService(),   // Act as a peer that can help others discover their public IP
+		libp2p.EnableHolePunching(), // The magic flag: bypass firewalls using STUN/TURN concepts
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create libp2p host: %w", err)
