@@ -28,6 +28,10 @@ type Agent struct {
 	publicKey string
 	expiresAt int64
 
+	// tracks active peers by nodeID → publicKey for diffing
+	peersMu     sync.RWMutex
+	activePeers map[string]string
+
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 }
@@ -41,17 +45,17 @@ func New(cfg *config.Config, logger pkglogger.Logger) (*Agent, error) {
 	wgMgr := wireguard.NewManager(logger, *cfg.DryRun)
 
 	return &Agent{
-		cfg:    cfg,
-		client: c,
-		wg_mgr: wgMgr,
-		logger: logger,
+		cfg:         cfg,
+		client:      c,
+		wg_mgr:      wgMgr,
+		logger:      logger,
+		activePeers: make(map[string]string),
 	}, nil
 }
 
 func (a *Agent) Start(ctx context.Context) error {
 	ctx, a.cancel = context.WithCancel(ctx)
 
-	// Step 0: Start P2P Host
 	a.logger.Info("Starting P2P Host...")
 	p2pMgr, err := p2p.New(ctx, a.logger, a.cfg.P2PPort)
 	if err != nil {
@@ -59,7 +63,6 @@ func (a *Agent) Start(ctx context.Context) error {
 	}
 	a.p2p_mgr = p2pMgr
 
-	// Step 0.5: Generate WireGuard keypair
 	a.logger.Info("Generating WireGuard keypair...")
 	keyPair, err := wireguard.GenerateKeyPair()
 	if err != nil {
@@ -68,7 +71,6 @@ func (a *Agent) Start(ctx context.Context) error {
 	a.publicKey = keyPair.PublicKey
 	a.logger.Infof("Public key: %s", keyPair.PublicKey[:16]+"...")
 
-	// Step 1: Register with Identity Service (with retry)
 	a.logger.Info("Registering with Identity Service...")
 	nodeID, token, expiresAt, err := a.retryRegister(ctx, keyPair.PublicKey)
 	if err != nil {
@@ -80,7 +82,6 @@ func (a *Agent) Start(ctx context.Context) error {
 	a.logger.Infof("Registered as %s (token expires: %s)", a.nodeID,
 		time.Unix(a.expiresAt, 0).Format("15:04:05"))
 
-	// Step 2: Get network config
 	a.logger.Info("Fetching network config...")
 	netCfg, err := a.client.GetNetworkConfig(ctx, a.token)
 	if err != nil {
@@ -88,7 +89,6 @@ func (a *Agent) Start(ctx context.Context) error {
 	}
 	a.logger.Infof("Network: %s, MTU: %d, DNS: %v", netCfg.NetworkCidr, netCfg.Mtu, netCfg.DnsServers)
 
-	// Step 3: Request VPN IP
 	a.logger.Info("Requesting VPN IP...")
 	ip, subnet, gw, err := a.client.RequestIP(ctx, a.token, a.nodeID)
 	if err != nil {
@@ -97,29 +97,24 @@ func (a *Agent) Start(ctx context.Context) error {
 	a.vpnIP = ip
 	a.logger.Infof("VPN IP: %s, Subnet: %s, Gateway: %s", ip, subnet, gw)
 
-	// Step 4: Register as peer in Discovery
 	a.logger.Info("Announcing to Discovery Service...")
 	if err := a.client.RegisterPeer(ctx, a.token, a.vpnIP, int32(a.cfg.WireGuardPort), a.p2p_mgr.PeerID(), a.p2p_mgr.Multiaddrs()); err != nil {
 		return err
 	}
 	a.logger.Info("Peer registered")
 
-	// Step 5: Discover other peers
 	peers, err := a.client.DiscoverPeers(ctx, 10)
 	if err != nil {
-		a.logger.Warnf("Peer discovery failed: %v", err)
+		a.logger.Warnf("Initial peer discovery failed: %v", err)
 	} else {
 		a.logger.Infof("Found %d peers", len(peers))
 		for _, p := range peers {
 			a.logger.Infof("  Peer: %s (P2P ID: %s)", p.NodeId, p.PeerId)
 
-			// Step 5.5: Attempt P2P Handshake (Ping)
 			if p.NodeId != a.nodeID && len(p.P2PAddrs) > 0 {
 				go func(peerID string, addrs []string) {
-					// We just try the first valid address for the ping test
 					pInfo, err := a.p2p_mgr.GetPeerInfo(addrs[0])
 					if err == nil && pInfo != nil {
-						// Small timeout for ping attempt
 						pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 						defer cancel()
 						_ = a.p2p_mgr.ConnectAndPing(pingCtx, *pInfo)
@@ -129,8 +124,6 @@ func (a *Agent) Start(ctx context.Context) error {
 		}
 	}
 
-	// Step 6: Configure WireGuard tunnel
-	a.logger.Info("Configuring WireGuard tunnel...")
 	dns := ""
 	if len(netCfg.DnsServers) > 0 {
 		dns = strings.Join(netCfg.DnsServers, ", ")
@@ -143,18 +136,15 @@ func (a *Agent) Start(ctx context.Context) error {
 		DNS:        dns,
 	}
 
-	// Add discovered peers to WireGuard config (fetch their public keys)
 	for _, p := range peers {
 		if p.NodeId == a.nodeID {
-			continue // skip ourselves
+			continue
 		}
-
 		peerKey, err := a.client.GetPeerPublicKey(ctx, p.NodeId)
 		if err != nil {
 			a.logger.Warnf("Failed to get public key for %s: %v", p.NodeId, err)
 			continue
 		}
-
 		endpoint := fmt.Sprintf("%s:%d", p.IpAddress, p.Port)
 		wgCfg.Peers = append(wgCfg.Peers, wireguard.PeerConfig{
 			PublicKey:  peerKey,
@@ -162,16 +152,20 @@ func (a *Agent) Start(ctx context.Context) error {
 			AllowedIPs: netCfg.NetworkCidr,
 		})
 		a.logger.Infof("  Added peer %s @ %s", p.NodeId, endpoint)
+
+		a.peersMu.Lock()
+		a.activePeers[p.NodeId] = peerKey
+		a.peersMu.Unlock()
 	}
 
 	if err := a.wg_mgr.Configure(wgCfg); err != nil {
 		a.logger.Errorf("WireGuard config failed: %v", err)
 	}
 
-	// Step 7: Start background loops
-	a.wg.Add(2)
+	a.wg.Add(3)
 	go a.heartbeatLoop(ctx)
 	go a.tokenRefreshLoop(ctx)
+	go a.peerSyncLoop(ctx, netCfg.NetworkCidr)
 
 	a.logger.Info("Agent is running")
 	return nil
@@ -185,7 +179,6 @@ func (a *Agent) Stop() {
 	}
 	a.wg.Wait()
 
-	// Release IP before exit
 	if a.vpnIP != "" && a.token != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -196,7 +189,6 @@ func (a *Agent) Stop() {
 		}
 	}
 
-	// Tear down WireGuard
 	if err := a.wg_mgr.Down(); err != nil {
 		a.logger.Errorf("WireGuard down failed: %v", err)
 	}
@@ -211,7 +203,6 @@ func (a *Agent) Stop() {
 	a.logger.Info("Agent stopped")
 }
 
-// heartbeatLoop sends periodic heartbeats with retry
 func (a *Agent) heartbeatLoop(ctx context.Context) {
 	defer a.wg.Done()
 
@@ -237,12 +228,10 @@ func (a *Agent) heartbeatLoop(ctx context.Context) {
 	}
 }
 
-// tokenRefreshLoop re-registers before token expires
 func (a *Agent) tokenRefreshLoop(ctx context.Context) {
 	defer a.wg.Done()
 
 	for {
-		// Calculate when to refresh (80% of token lifetime)
 		remaining := time.Until(time.Unix(a.expiresAt, 0))
 		refreshIn := time.Duration(float64(remaining) * 0.8)
 		if refreshIn < 30*time.Second {
@@ -269,7 +258,100 @@ func (a *Agent) tokenRefreshLoop(ctx context.Context) {
 	}
 }
 
-// retryRegister attempts registration with exponential backoff
+// peerSyncLoop periodically rediscovers peers and updates the WireGuard tunnel.
+//
+// On each tick it:
+//  1. Fetches the current peer list from Discovery.
+//  2. Adds peers that are new since the last sync.
+//  3. Removes peers that have disappeared (left the network / token expired).
+//
+// This means two agents will automatically see each other even if one joins
+// after the other has already started.
+func (a *Agent) peerSyncLoop(ctx context.Context, networkCIDR string) {
+	defer a.wg.Done()
+
+	interval := time.Duration(a.cfg.PeerSyncInterval) * time.Second
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	a.logger.Infof("Peer sync loop started (interval: %s)", interval)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			a.syncPeers(ctx, networkCIDR)
+		}
+	}
+}
+
+func (a *Agent) syncPeers(ctx context.Context, networkCIDR string) {
+	peers, err := a.client.DiscoverPeers(ctx, 50)
+	if err != nil {
+		a.logger.Warnf("Peer sync: discovery failed: %v", err)
+		return
+	}
+
+	// Build the set of currently online peers (excluding self).
+	online := make(map[string]string) // nodeID → publicKey
+	for _, p := range peers {
+		if p.NodeId == a.nodeID {
+			continue
+		}
+		key, err := a.client.GetPeerPublicKey(ctx, p.NodeId)
+		if err != nil {
+			a.logger.Warnf("Peer sync: get public key for %s failed: %v", p.NodeId, err)
+			continue
+		}
+		online[p.NodeId] = key
+	}
+
+	a.peersMu.Lock()
+	defer a.peersMu.Unlock()
+
+	// Add new peers.
+	for nodeID, pubKey := range online {
+		if _, exists := a.activePeers[nodeID]; exists {
+			continue
+		}
+		// Find the endpoint for this peer.
+		var endpoint string
+		for _, p := range peers {
+			if p.NodeId == nodeID {
+				endpoint = fmt.Sprintf("%s:%d", p.IpAddress, p.Port)
+				break
+			}
+		}
+		if endpoint == "" {
+			continue
+		}
+		if err := a.wg_mgr.AddPeer(wireguard.PeerConfig{
+			PublicKey:  pubKey,
+			Endpoint:   endpoint,
+			AllowedIPs: networkCIDR,
+		}); err != nil {
+			a.logger.Warnf("Peer sync: add peer %s failed: %v", nodeID, err)
+			continue
+		}
+		a.activePeers[nodeID] = pubKey
+		a.logger.Infof("Peer sync: added new peer %s @ %s", nodeID, endpoint)
+	}
+
+	// Remove peers that are no longer online.
+	for nodeID, pubKey := range a.activePeers {
+		if _, exists := online[nodeID]; exists {
+			continue
+		}
+		if err := a.wg_mgr.RemovePeer(pubKey); err != nil {
+			a.logger.Warnf("Peer sync: remove peer %s failed: %v", nodeID, err)
+			continue
+		}
+		delete(a.activePeers, nodeID)
+		a.logger.Infof("Peer sync: removed stale peer %s", nodeID)
+	}
+}
+
 func (a *Agent) retryRegister(ctx context.Context, publicKey string) (string, string, int64, error) {
 	maxRetries := 5
 	for i := 0; i < maxRetries; i++ {

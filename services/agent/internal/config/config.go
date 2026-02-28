@@ -9,14 +9,15 @@ import (
 )
 
 type Config struct {
-	IdentityAddr  string `yaml:"identity_addr"`
-	DiscoveryAddr string `yaml:"discovery_addr"`
-	ConfigAddr    string `yaml:"config_addr"`
-	LogLevel      string `yaml:"log_level"`
-	Heartbeat     int    `yaml:"heartbeat_interval"`
-	DryRun        *bool  `yaml:"dry_run"`
-	WireGuardPort int    `yaml:"wireguard_port"`
-	P2PPort       int    `yaml:"p2p_port"`
+	IdentityAddr     string `yaml:"identity_addr"`
+	DiscoveryAddr    string `yaml:"discovery_addr"`
+	ConfigAddr       string `yaml:"config_addr"`
+	LogLevel         string `yaml:"log_level"`
+	Heartbeat        int    `yaml:"heartbeat_interval"`
+	PeerSyncInterval int    `yaml:"peer_sync_interval"`
+	DryRun           *bool  `yaml:"dry_run"`
+	WireGuardPort    int    `yaml:"wireguard_port"`
+	P2PPort          int    `yaml:"p2p_port"`
 }
 
 func Load(path string) (*Config, error) {
@@ -61,6 +62,9 @@ func (c *Config) setDefaults() {
 	}
 	if c.P2PPort == 0 {
 		c.P2PPort = 4001
+	}
+	if c.PeerSyncInterval == 0 {
+		c.PeerSyncInterval = 60
 	}
 }
 
