@@ -1,0 +1,203 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+env:
+  GO_VERSION: "1.25"
+
+jobs:
+  # ────────────────────────────────────────────────────────────────
+  # Job 1: Build – compile every service
+  # ────────────────────────────────────────────────────────────────
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: "**/go.sum"
+
+      - name: Build – Identity
+        run: cd services/identity && go build ./...
+
+      - name: Build – Discovery
+        run: cd services/discovery && go build ./...
+
+      - name: Build – Config
+        run: cd services/config && go build ./...
+
+      - name: Build – Agent
+        run: cd services/agent && go build ./...
+
+  # ────────────────────────────────────────────────────────────────
+  # Job 2: Integration Tests (needs Postgres + Redis)
+  # ────────────────────────────────────────────────────────────────
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: build
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: gordion
+          POSTGRES_USER: gordion
+          POSTGRES_PASSWORD: dev_password_123
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 3s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgres://gordion:dev_password_123@localhost:5432/gordion?sslmode=disable
+      REDIS_URL: localhost:6379
+      JWT_SECRET: ci_test_secret_key_for_testing_only
+      JWT_DURATION_HOURS: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: "**/go.sum"
+
+      - name: Run DB migrations
+        run: |
+          cd services/identity
+          for f in migrations/*.sql; do
+            echo "Applying $f..."
+            PGPASSWORD=dev_password_123 psql -h localhost -U gordion -d gordion -f "$f"
+          done
+
+      - name: Start Identity Service
+        run: |
+          cd services/identity
+          go run ./cmd/server &
+          sleep 5
+          echo "Identity service started"
+        env:
+          GRPC_PORT: "8001"
+          DB_URL: postgres://gordion:dev_password_123@localhost:5432/gordion?sslmode=disable
+
+      - name: Start Discovery Service
+        run: |
+          cd services/discovery
+          METRICS_PORT=9094 go run ./cmd/server &
+          sleep 3
+          echo "Discovery service started"
+        env:
+          GRPC_PORT: "8002"
+
+      - name: Start Config Service
+        run: |
+          cd services/config
+          METRICS_PORT=9095 go run ./cmd/server &
+          sleep 3
+          echo "Config service started"
+
+      - name: Run Identity Integration Tests
+        run: cd services/identity && go test -v -timeout 30s ./test/...
+
+      - name: Run Discovery Integration Tests
+        run: cd services/discovery && go test -v -timeout 30s ./test/...
+
+      - name: Run Config Integration Tests
+        run: cd services/config && go test -v -timeout 30s ./test/...
+
+      - name: Run Agent Integration Tests
+        run: cd services/agent && go test -v -timeout 60s ./test/...
+
+  # ────────────────────────────────────────────────────────────────
+  # Job 3: Lint
+  # ────────────────────────────────────────────────────────────────
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: "**/go.sum"
+
+      - name: golangci-lint – Identity
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          working-directory: services/identity
+
+      - name: golangci-lint – Discovery
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          working-directory: services/discovery
+
+      - name: golangci-lint – Config
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          working-directory: services/config
+
+      - name: golangci-lint – Agent
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          working-directory: services/agent
+
+  # ────────────────────────────────────────────────────────────────
+  # Job 4: Security – vulnerability scan
+  # ────────────────────────────────────────────────────────────────
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: "**/go.sum"
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Scan – Identity
+        run: cd services/identity && govulncheck ./...
+
+      - name: Scan – Discovery
+        run: cd services/discovery && govulncheck ./...
+
+      - name: Scan – Config
+        run: cd services/config && govulncheck ./...
+
+      - name: Scan – Agent
+        run: cd services/agent && govulncheck ./...
