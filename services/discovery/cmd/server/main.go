@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -127,6 +128,28 @@ func main() {
 	go func() {
 		if err := grpcServer.Serve(listener); err != nil {
 			logger.Fatalf("Failed to serve: %v", err)
+		}
+	}()
+
+	ctx, cancelCtx := context.WithCancel(context.Background())
+	defer cancelCtx()
+
+	go func() {
+		cleanupInterval := time.Duration(cfg.HeartbeatTTL*2) * time.Second
+		ticker := time.NewTicker(cleanupInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				n, err := reg.CleanupStale(ctx)
+				if err != nil {
+					logger.Warnf("Stale peer cleanup failed: %v", err)
+				} else if n > 0 {
+					logger.Infof("Stale peer cleanup: removed %d expired entries", n)
+				}
+			}
 		}
 	}()
 

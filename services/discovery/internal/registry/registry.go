@@ -142,3 +142,35 @@ func (r *Registry) ListOnlinePeers(ctx context.Context) ([]*Peer, error) {
 
 	return peers, nil
 }
+
+// CleanupStale removes Set members whose Redis key has already expired.
+// Runs even when no one is listing peers, keeping the Set coherent.
+// Should be called periodically with interval ~= HeartbeatTTL.
+func (r *Registry) CleanupStale(ctx context.Context) (int, error) {
+	nodeIDs, err := r.client.SMembers(ctx, peersSetKey).Result()
+	if err != nil {
+		return 0, fmt.Errorf("redis smembers error: %w", err)
+	}
+	if len(nodeIDs) == 0 {
+		return 0, nil
+	}
+
+	pipe := r.client.Pipeline()
+	cmds := make([]*redis.IntCmd, len(nodeIDs))
+	for i, id := range nodeIDs {
+		cmds[i] = pipe.Exists(ctx, peerKeyPrefix+id)
+	}
+	if _, err := pipe.Exec(ctx); err != nil && err != redis.Nil {
+		return 0, fmt.Errorf("pipeline exec error: %w", err)
+	}
+
+	var removed int
+	for i, cmd := range cmds {
+		if cmd.Val() == 0 {
+			r.client.SRem(ctx, peersSetKey, nodeIDs[i])
+			removed++
+		}
+	}
+
+	return removed, nil
+}
