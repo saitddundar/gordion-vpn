@@ -1,7 +1,7 @@
 .PHONY: build-all build-identity build-discovery build-config build-agent \
        test-all test-identity test-discovery test-config test-agent \
        docker-up docker-down docker-restart docker-build \
-       tidy-all proto clean help
+       tidy-all proto clean vulncheck help
 
 # === BUILD ===
 
@@ -85,6 +85,15 @@ clean:
 	del /Q services\config\config-server.exe 2>nul || true
 	del /Q services\agent\agent.exe 2>nul || true
 
+# === SECURITY ===
+
+vulncheck:
+	@echo "Running vulnerability check on all services..."
+	cd services/identity && govulncheck ./...
+	cd services/discovery && govulncheck ./...
+	cd services/config && govulncheck ./...
+	cd services/agent && govulncheck ./...
+
 # === HELP ===
 
 help:
@@ -115,6 +124,7 @@ help:
 	@echo   Other:
 	@echo     make tidy-all          Run go mod tidy on all modules
 	@echo     make proto             Generate protobuf code
+	@echo     make vulncheck         Scan dependencies for CVEs
 	@echo     make clean             Remove build artifacts
 	@echo     make help              Show this help
 	@echo.
