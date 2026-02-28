@@ -10,6 +10,6 @@ FROM alpine:3.21
 RUN apk add --no-cache ca-certificates
 
 COPY --from=builder /agent /usr/local/bin/agent
-COPY configs/agent.dev.yaml /etc/gordion/agent.yaml
+COPY --from=builder /build/configs/agent.dev.yaml /etc/gordion/agent.yaml
 
 ENTRYPOINT ["agent"]

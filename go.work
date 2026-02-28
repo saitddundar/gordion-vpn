@@ -2,8 +2,10 @@ go 1.25.4
 
 use (
 	.
+	./pkg/circuitbreaker
 	./pkg/logger
 	./pkg/metrics
+	./pkg/tracing
 	./services/agent
 	./services/config
 	./services/discovery
