@@ -110,12 +110,17 @@ func main() {
 
 	logger.Infof("gRPC server listening on %s", addr)
 
-	// Metrics endpoint
+	// Metrics endpoint (non-fatal if port already in use)
 	go func() {
-		http.Handle("/metrics", promhttp.Handler())
-		logger.Info("Metrics endpoint listening on :9091")
-		if err := http.ListenAndServe(":9091", nil); err != nil {
-			logger.Fatalf("Failed to start metrics server: %v", err)
+		metricsPort := os.Getenv("METRICS_PORT")
+		if metricsPort == "" {
+			metricsPort = "9091"
+		}
+		mux := http.NewServeMux()
+		mux.Handle("/metrics", promhttp.Handler())
+		logger.Infof("Metrics endpoint listening on :%s", metricsPort)
+		if err := http.ListenAndServe(":"+metricsPort, mux); err != nil {
+			logger.Warnf("Metrics server error (non-fatal): %v", err)
 		}
 	}()
 
