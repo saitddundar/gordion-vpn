@@ -114,11 +114,14 @@ gordion-vpn/
 │       └── test/              # End-to-end integration tests
 ├── pkg/
 │   ├── auth/                  # Inter-service authentication client
+│   ├── circuitbreaker/        # Circuit breaker for gRPC client resilience
 │   ├── config/                # Configuration management
 │   ├── grpcutil/              # gRPC error utilities
+│   ├── healthcheck/           # gRPC health check utilities
 │   ├── logger/                # Structured logging (zerolog)
 │   ├── metrics/               # Prometheus metrics
 │   ├── middleware/            # Logging interceptor (request_id)
+│   ├── ratelimit/             # Per-IP sliding window rate limiter
 │   ├── tlsutil/               # TLS credential helpers
 │   ├── tracing/               # Distributed tracing (trace_id propagation)
 │   └── proto/                 # Generated protobuf code
@@ -128,6 +131,7 @@ gordion-vpn/
 │   └── config/v1/
 ├── deployments/               # Docker Compose, Prometheus config
 ├── configs/                   # Service configuration files
+├── docs/                      # Documentation (architecture notes, design decisions)
 ├── scripts/                   # Proto generation, cert generation
 └── Makefile                   # Build automation
 ```
@@ -155,7 +159,7 @@ Agent A                    Control Plane               Agent B
 
 Each agent registers its **libp2p PeerID** and multiaddresses alongside its WireGuard public key. This enables NAT traversal via **AutoNAT** and **Hole Punching** before WireGuard tunnel setup.
 
-### Phase 2: WireGuard ↔ libp2p Bridge 
+### Phase 2: WireGuard ↔ libp2p Bridge
 
 The core challenge with P2P VPNs is NAT — two agents behind residential routers cannot directly exchange WireGuard UDP packets. The solution is to **tunnel WireGuard traffic over the libp2p stream**, which has already punched through NAT.
 
@@ -183,12 +187,15 @@ The core challenge with P2P VPNs is NAT — two agents behind residential router
 
 **How it works:**
 
-1. **Custom Protocol** — A `/gordion/wg/1.0.0` libp2p protocol is registered on each agent.
-2. **Local UDP Socket** — WireGuard is configured to send its encrypted packets to a local loopback socket instead of directly to the peer's IP.
-3. **Bridge Goroutine** — Reads WireGuard packets from the local socket → writes them into the libp2p stream to the target peer.
-4. **Reverse Bridge** — Reads packets arriving on the libp2p stream → writes them to the local socket that WireGuard is listening on.
+1. **Custom Protocol** — A `/gordion/wg/1.0.0` libp2p protocol is registered on each agent. When two agents discover each other, one opens a bidirectional stream using this protocol.
+2. **Per-Peer Proxy Ports** — Each peer gets a dedicated local UDP port (e.g., peer B → `:51920`, peer C → `:51921`). WireGuard's endpoint is set to this loopback address, ensuring packets for different peers never mix.
+3. **Length-Prefixed Framing** — UDP datagrams are encapsulated with a 4-byte big-endian length header before being written to the libp2p stream. This prevents packet boundary loss, which is critical because libp2p streams are TCP-like (byte-oriented), while WireGuard expects discrete UDP datagrams.
+4. **Outgoing Bridge** — A goroutine reads WireGuard packets from the peer's proxy port → prepends the length header → writes them into the specific libp2p stream.
+5. **Incoming Bridge** — A goroutine reads the length header from the libp2p stream → reads exactly that many bytes → writes the reconstructed UDP datagram to WireGuard's listen port.
+6. **Stream Race Prevention** — Only the peer with the lexicographically larger PeerID initiates the stream. The other side waits for the incoming connection. This deterministic rule eliminates duplicate streams and race conditions.
+7. **Bridge Lifecycle** — If a libp2p stream drops (network change, peer disconnect), the bridge goroutines exit cleanly. On the next `peerSyncLoop` cycle, the agent rediscovers the peer and re-establishes the bridge automatically.
 
-This approach means WireGuard's end-to-end encryption is preserved — libp2p only carries the already-encrypted WireGuard UDP datagrams.
+**Performance note:** The libp2p layer adds minimal overhead — it only transports already-encrypted WireGuard UDP datagrams. There is no double encryption; WireGuard's Curve25519 + ChaCha20-Poly1305 handles all payload security.
 
 ### Peer Selection Strategy
 
@@ -478,10 +485,13 @@ cd services/agent     && go test -v -count=1 ./test/...
 - P2P Handshake (Ping) verified between two local agents (RTT ~0ms loopback)
 - CI/CD pipeline: GitHub Actions (build, integration tests, lint, govulncheck)
 
-### Sprint 9: WireGuard ↔ libp2p Bridge 🔜
+### Sprint 9: WireGuard ↔ libp2p Bridge ✅
 - `/gordion/wg/1.0.0` custom libp2p protocol
-- Local UDP socket loopback bridge between WireGuard and libp2p stream
-- True serverless P2P VPN over NAT
+- Per-peer UDP proxy ports (no broadcast, each peer has dedicated relay)
+- Length-prefixed framing for UDP-over-stream
+- PeerID-based stream initiator to prevent race conditions
+- Full integration with peerSyncLoop for automatic bridge on new peer discovery
+- WireGuard ListenPort + CIDR address format fixes
 
 ## Challenges & Solutions
 
@@ -501,7 +511,14 @@ Instead of relaying all traffic through a slow central proxy, we integrated the 
 If the central `Discovery Service` dies, newly joined agents wouldn't know who to connect to, creating a single point of failure.
 
 **Solution (Hybrid Architecture):** 
-Gordion VPN uses a **Hybrid Control Plane**. Centralized microservices (Identity, Config, Discovery) still handle global authentication, policy, and act as "Bootstrap Nodes". However, once the initial peer list is acquired, agents communicate directly via libp2p. In the future, we plan to migrate the peer registry state fully into a Distributed Hash Table (DHT), allowing the network to heal itself even if the central servers are offline.
+Gordion VPN uses a **Hybrid Control Plane**. Centralized microservices (Identity, Config, Discovery) handle global authentication, policy, and act as "Bootstrap Nodes". Once the initial peer list is acquired, agents communicate directly via libp2p.
+
+### 3. Per-Peer Packet Routing
+**Challenge:**
+The initial bridge design broadcast every WireGuard packet to all connected peers. With 10 peers, each packet was sent 10 times — 9 copies wasted.
+
+**Solution:**
+Each peer is assigned a dedicated local UDP proxy port. WireGuard’s peer endpoint points to the specific proxy, so packets are routed 1:1 to the correct libp2p stream. No broadcast, no wasted bandwidth.
 
 ## License
 
