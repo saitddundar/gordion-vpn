@@ -10,7 +10,10 @@ import (
 
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/protocol"
 )
+
+const ProtocolWG = protocol.ID("/gordion/wg/1.0.0")
 
 // Bridge relays UDP packets between local WireGuard and remote peers via libp2p.
 // Each peer gets its own proxy UDP port so packets are routed correctly.
@@ -73,6 +76,25 @@ func (b *Bridge) RegisterIncoming() {
 }
 
 func (b *Bridge) AddPeer(ctx context.Context, peerID peer.ID) (int, error) {
+	// Only the peer with the larger ID initiates the stream to avoid race
+	if b.manager.host.ID() < peerID {
+		// We wait for the remote to open the stream via RegisterIncoming
+		b.mu.Lock()
+		if relay, exists := b.peers[peerID]; exists {
+			b.mu.Unlock()
+			return relay.proxyPort, nil
+		}
+		b.mu.Unlock()
+
+		// Allocate relay without stream
+		port, err := b.allocateRelayNoStream(peerID)
+		if err != nil {
+			return 0, err
+		}
+		b.manager.logger.Infof("WG Bridge: waiting for %s to open stream (proxy port %d)", peerID.ShortString(), port)
+		return port, nil
+	}
+
 	stream, err := b.manager.host.NewStream(ctx, peerID, ProtocolWG)
 	if err != nil {
 		return 0, fmt.Errorf("bridge: stream to %s failed: %w", peerID.ShortString(), err)
@@ -85,6 +107,31 @@ func (b *Bridge) AddPeer(ctx context.Context, peerID peer.ID) (int, error) {
 	}
 
 	b.manager.logger.Infof("WG Bridge: peer %s on proxy port %d", peerID.ShortString(), port)
+	return port, nil
+}
+
+func (b *Bridge) allocateRelayNoStream(peerID peer.ID) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	port := b.nextPort
+	b.nextPort++
+
+	addr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: port}
+	conn, err := net.ListenUDP("udp", addr)
+	if err != nil {
+		return 0, fmt.Errorf("bridge: failed to listen on UDP %d: %w", port, err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	relay := &peerRelay{
+		proxyConn: conn,
+		proxyPort: port,
+		cancel:    cancel,
+	}
+	b.peers[peerID] = relay
+
+	go b.udpToStream(ctx, relay, peerID)
 	return port, nil
 }
 
