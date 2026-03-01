@@ -14,6 +14,7 @@ import (
 
 const configTemplate = `[Interface]
 PrivateKey = {{ .PrivateKey }}
+ListenPort = {{ .ListenPort }}
 Address = {{ .Address }}
 MTU = {{ .MTU }}
 {{ if .DNS }}DNS = {{ .DNS }}{{ end }}
@@ -34,6 +35,7 @@ type PeerConfig struct {
 
 type Config struct {
 	PrivateKey string
+	ListenPort int
 	Address    string
 	MTU        int32
 	DNS        string

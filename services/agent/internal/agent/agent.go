@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"net"
 	"strings"
 	"sync"
 	"time"
@@ -144,7 +145,8 @@ func (a *Agent) Start(ctx context.Context) error {
 
 	wgCfg := &wireguard.Config{
 		PrivateKey: keyPair.PrivateKey,
-		Address:    fmt.Sprintf("%s/%s", ip, subnet),
+		ListenPort: a.cfg.WireGuardPort,
+		Address:    fmt.Sprintf("%s/%d", ip, maskToCIDR(subnet)),
 		MTU:        netCfg.Mtu,
 		DNS:        dns,
 	}
@@ -279,15 +281,6 @@ func (a *Agent) tokenRefreshLoop(ctx context.Context) {
 	}
 }
 
-// peerSyncLoop periodically rediscovers peers and updates the WireGuard tunnel.
-//
-// On each tick it:
-//  1. Fetches the current peer list from Discovery.
-//  2. Adds peers that are new since the last sync.
-//  3. Removes peers that have disappeared (left the network / token expired).
-//
-// This means two agents will automatically see each other even if one joins
-// after the other has already started.
 func (a *Agent) peerSyncLoop(ctx context.Context, networkCIDR string) {
 	defer a.wg.Done()
 
@@ -404,4 +397,13 @@ func (a *Agent) retryRegister(ctx context.Context, publicKey string) (string, st
 		}
 	}
 	return "", "", 0, fmt.Errorf("unreachable")
+}
+
+func maskToCIDR(mask string) int {
+	ip := net.ParseIP(mask)
+	if ip == nil {
+		return 24
+	}
+	ones, _ := net.IPMask(ip.To4()).Size()
+	return ones
 }
