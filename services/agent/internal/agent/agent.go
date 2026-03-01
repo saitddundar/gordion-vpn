@@ -25,12 +25,13 @@ type Agent struct {
 	logger  pkglogger.Logger
 
 	nodeID    string
-	token     string
 	vpnIP     string
 	publicKey string
+
+	tokenMu   sync.RWMutex
+	token     string
 	expiresAt int64
 
-	// tracks active peers by nodeID → publicKey for diffing
 	peersMu     sync.RWMutex
 	activePeers map[string]string
 
@@ -86,10 +87,9 @@ func (a *Agent) Start(ctx context.Context) error {
 		return err
 	}
 	a.nodeID = nodeID
-	a.token = token
-	a.expiresAt = expiresAt
+	a.setToken(token, expiresAt)
 	a.logger.Infof("Registered as %s (token expires: %s)", a.nodeID,
-		time.Unix(a.expiresAt, 0).Format("15:04:05"))
+		time.Unix(expiresAt, 0).Format("15:04:05"))
 
 	a.logger.Info("Fetching network config...")
 	netCfg, err := a.client.GetNetworkConfig(ctx, a.token)
@@ -207,10 +207,10 @@ func (a *Agent) Stop() {
 	}
 	a.wg.Wait()
 
-	if a.vpnIP != "" && a.token != "" {
+	if tok := a.getToken(); a.vpnIP != "" && tok != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		if err := a.client.ReleaseIP(ctx, a.token, a.nodeID, a.vpnIP); err != nil {
+		if err := a.client.ReleaseIP(ctx, tok, a.nodeID, a.vpnIP); err != nil {
 			a.logger.Errorf("Failed to release IP: %v", err)
 		} else {
 			a.logger.Infof("Released IP %s", a.vpnIP)
@@ -235,6 +235,25 @@ func (a *Agent) Stop() {
 	a.logger.Info("Agent stopped")
 }
 
+func (a *Agent) getToken() string {
+	a.tokenMu.RLock()
+	defer a.tokenMu.RUnlock()
+	return a.token
+}
+
+func (a *Agent) getExpiresAt() int64 {
+	a.tokenMu.RLock()
+	defer a.tokenMu.RUnlock()
+	return a.expiresAt
+}
+
+func (a *Agent) setToken(token string, expiresAt int64) {
+	a.tokenMu.Lock()
+	defer a.tokenMu.Unlock()
+	a.token = token
+	a.expiresAt = expiresAt
+}
+
 func (a *Agent) heartbeatLoop(ctx context.Context) {
 	defer a.wg.Done()
 
@@ -247,7 +266,7 @@ func (a *Agent) heartbeatLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if err := a.client.Heartbeat(ctx, a.token); err != nil {
+			if err := a.client.Heartbeat(ctx, a.getToken()); err != nil {
 				failCount++
 				backoff := time.Duration(math.Min(float64(failCount*failCount), 60)) * time.Second
 				a.logger.Errorf("Heartbeat failed (%d): %v, retry in %s", failCount, err, backoff)
@@ -264,7 +283,7 @@ func (a *Agent) tokenRefreshLoop(ctx context.Context) {
 	defer a.wg.Done()
 
 	for {
-		remaining := time.Until(time.Unix(a.expiresAt, 0))
+		remaining := time.Until(time.Unix(a.getExpiresAt(), 0))
 		refreshIn := time.Duration(float64(remaining) * 0.8)
 		if refreshIn < 30*time.Second {
 			refreshIn = 30 * time.Second
@@ -282,10 +301,9 @@ func (a *Agent) tokenRefreshLoop(ctx context.Context) {
 				a.logger.Errorf("Token refresh failed: %v", err)
 				continue
 			}
-			a.token = token
-			a.expiresAt = expiresAt
+			a.setToken(token, expiresAt)
 			a.logger.Infof("Token refreshed (expires: %s)",
-				time.Unix(a.expiresAt, 0).Format("15:04:05"))
+				time.Unix(expiresAt, 0).Format("15:04:05"))
 		}
 	}
 }
