@@ -189,7 +189,7 @@ The core challenge with P2P VPNs is NAT — two agents behind residential router
 
 1. **Custom Protocol** — A `/gordion/wg/1.0.0` libp2p protocol is registered on each agent. When two agents discover each other, one opens a bidirectional stream using this protocol.
 2. **Per-Peer Proxy Ports** — Each peer gets a dedicated local UDP port (e.g., peer B → `:51920`, peer C → `:51921`). WireGuard's endpoint is set to this loopback address, ensuring packets for different peers never mix.
-3. **Length-Prefixed Framing** — UDP datagrams are encapsulated with a 4-byte big-endian length header before being written to the libp2p stream. This prevents packet boundary loss, which is critical because libp2p streams are TCP-like (byte-oriented), while WireGuard expects discrete UDP datagrams.
+3. **Length-Prefixed Framing** — UDP datagrams are encapsulated with a 2-byte big-endian length header before being written to the libp2p stream. This prevents packet boundary loss, which is critical because libp2p streams are TCP-like (byte-oriented), while WireGuard expects discrete UDP datagrams.
 4. **Outgoing Bridge** — A goroutine reads WireGuard packets from the peer's proxy port → prepends the length header → writes them into the specific libp2p stream.
 5. **Incoming Bridge** — A goroutine reads the length header from the libp2p stream → reads exactly that many bytes → writes the reconstructed UDP datagram to WireGuard's listen port.
 6. **Stream Race Prevention** — Only the peer with the lexicographically larger PeerID initiates the stream. The other side waits for the incoming connection. This deterministic rule eliminates duplicate streams and race conditions.
