@@ -20,6 +20,7 @@ type Agent struct {
 	client  *client.Client
 	wg_mgr  *wireguard.Manager
 	p2p_mgr *p2p.Manager
+	bridge  *p2p.Bridge
 	logger  pkglogger.Logger
 
 	nodeID    string
@@ -62,7 +63,14 @@ func (a *Agent) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to start p2p host: %w", err)
 	}
 	a.p2p_mgr = p2pMgr
-	a.p2p_mgr.RegisterWGProtocol()
+
+	proxyPort := a.cfg.WireGuardPort + 100
+	bridge, err := a.p2p_mgr.NewBridge(proxyPort, a.cfg.WireGuardPort)
+	if err != nil {
+		return fmt.Errorf("failed to create bridge: %w", err)
+	}
+	a.bridge = bridge
+	a.bridge.RegisterIncoming()
 
 	a.logger.Info("Generating WireGuard keypair...")
 	keyPair, err := wireguard.GenerateKeyPair()
@@ -123,8 +131,7 @@ func (a *Agent) Start(ctx context.Context) error {
 					if err := a.p2p_mgr.ConnectAndPing(pingCtx, *pInfo); err != nil {
 						return
 					}
-					// Ping OK → test WG stream
-					_ = a.p2p_mgr.OpenWGStream(pingCtx, pInfo.ID)
+					_ = a.bridge.ConnectToPeer(pingCtx, pInfo.ID)
 				}(p.P2PAddrs)
 			}
 		}
@@ -151,7 +158,7 @@ func (a *Agent) Start(ctx context.Context) error {
 			a.logger.Warnf("Failed to get public key for %s: %v", p.NodeId, err)
 			continue
 		}
-		endpoint := fmt.Sprintf("%s:%d", p.IpAddress, p.Port)
+		endpoint := fmt.Sprintf("127.0.0.1:%d", a.cfg.WireGuardPort+100)
 		wgCfg.Peers = append(wgCfg.Peers, wireguard.PeerConfig{
 			PublicKey:  peerKey,
 			Endpoint:   endpoint,
@@ -168,10 +175,14 @@ func (a *Agent) Start(ctx context.Context) error {
 		a.logger.Errorf("WireGuard config failed: %v", err)
 	}
 
-	a.wg.Add(3)
+	a.wg.Add(4)
 	go a.heartbeatLoop(ctx)
 	go a.tokenRefreshLoop(ctx)
 	go a.peerSyncLoop(ctx, netCfg.NetworkCidr)
+	go func() {
+		defer a.wg.Done()
+		a.bridge.StartUDPRelay(ctx)
+	}()
 
 	a.logger.Info("Agent is running")
 	return nil
@@ -197,6 +208,10 @@ func (a *Agent) Stop() {
 
 	if err := a.wg_mgr.Down(); err != nil {
 		a.logger.Errorf("WireGuard down failed: %v", err)
+	}
+
+	if a.bridge != nil {
+		a.bridge.Close()
 	}
 
 	if a.p2p_mgr != nil {
