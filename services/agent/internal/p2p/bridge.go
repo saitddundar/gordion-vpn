@@ -12,78 +12,148 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
-// Bridge relays UDP packets between local WireGuard and a remote peer via libp2p.
+// Bridge relays UDP packets between local WireGuard and remote peers via libp2p.
+// Each peer gets its own proxy UDP port so packets are routed correctly.
 //
-// Outgoing: WG sends to 127.0.0.1:proxyPort → Bridge reads → libp2p stream → remote peer
-// Incoming: libp2p stream → Bridge reads → sends to 127.0.0.1:wgPort → WG receives
+// Outgoing: WG sends to 127.0.0.1:peerProxyPort → relay reads → libp2p stream → remote peer
+// Incoming: libp2p stream → relay reads → sends to 127.0.0.1:wgPort → WG receives
 type Bridge struct {
-	manager   *Manager
-	proxyConn *net.UDPConn
-	proxyPort int
-	wgPort    int
+	manager  *Manager
+	wgPort   int
+	nextPort int
 
-	mu      sync.Mutex
-	streams map[peer.ID]network.Stream
+	mu    sync.Mutex
+	peers map[peer.ID]*peerRelay
 }
 
-func (m *Manager) NewBridge(proxyPort, wgPort int) (*Bridge, error) {
-	addr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: proxyPort}
-	conn, err := net.ListenUDP("udp", addr)
-	if err != nil {
-		return nil, fmt.Errorf("bridge: failed to listen on UDP %d: %w", proxyPort, err)
-	}
+type peerRelay struct {
+	proxyConn *net.UDPConn
+	proxyPort int
+	stream    network.Stream
+	cancel    context.CancelFunc
+}
 
+func (m *Manager) NewBridge(wgPort, baseProxyPort int) (*Bridge, error) {
 	b := &Bridge{
-		manager:   m,
-		proxyConn: conn,
-		proxyPort: proxyPort,
-		wgPort:    wgPort,
-		streams:   make(map[peer.ID]network.Stream),
+		manager:  m,
+		wgPort:   wgPort,
+		nextPort: baseProxyPort,
+		peers:    make(map[peer.ID]*peerRelay),
 	}
 
-	m.logger.Infof("WG Bridge: proxy UDP on 127.0.0.1:%d → WG on 127.0.0.1:%d", proxyPort, wgPort)
+	m.logger.Infof("WG Bridge: initialized (WG port: %d, proxy base: %d)", wgPort, baseProxyPort)
 	return b, nil
 }
 
-// RegisterIncoming handles streams opened by remote peers.
 func (b *Bridge) RegisterIncoming() {
 	b.manager.host.SetStreamHandler(ProtocolWG, func(s network.Stream) {
 		remote := s.Conn().RemotePeer()
 		b.manager.logger.Infof("WG Bridge: incoming stream from %s", remote.ShortString())
 
 		b.mu.Lock()
-		if old, ok := b.streams[remote]; ok {
-			old.Reset()
+		relay, exists := b.peers[remote]
+		if exists && relay.stream != nil {
+			relay.stream.Reset()
+			relay.stream = s
+			b.mu.Unlock()
+			b.streamToUDP(s, remote, relay.proxyConn)
+			return
 		}
-		b.streams[remote] = s
 		b.mu.Unlock()
 
-		b.streamToUDP(s, remote)
+		// No relay yet for this peer — create one
+		port, err := b.allocateRelay(remote, s)
+		if err != nil {
+			b.manager.logger.Warnf("WG Bridge: failed to create relay for %s: %v", remote.ShortString(), err)
+			s.Reset()
+			return
+		}
+		b.manager.logger.Infof("WG Bridge: relay created for %s on proxy port %d", remote.ShortString(), port)
 	})
 }
 
-// ConnectToPeer opens a WG stream and starts relaying incoming packets.
-func (b *Bridge) ConnectToPeer(ctx context.Context, peerID peer.ID) error {
+func (b *Bridge) AddPeer(ctx context.Context, peerID peer.ID) (int, error) {
 	stream, err := b.manager.host.NewStream(ctx, peerID, ProtocolWG)
 	if err != nil {
-		return fmt.Errorf("bridge: stream to %s failed: %w", peerID.ShortString(), err)
+		return 0, fmt.Errorf("bridge: stream to %s failed: %w", peerID.ShortString(), err)
 	}
 
-	b.mu.Lock()
-	if old, ok := b.streams[peerID]; ok {
-		old.Reset()
+	port, err := b.allocateRelay(peerID, stream)
+	if err != nil {
+		stream.Close()
+		return 0, err
 	}
-	b.streams[peerID] = stream
-	b.mu.Unlock()
 
-	b.manager.logger.Infof("WG Bridge: stream opened to %s", peerID.ShortString())
-
-	go b.streamToUDP(stream, peerID)
-	return nil
+	b.manager.logger.Infof("WG Bridge: peer %s on proxy port %d", peerID.ShortString(), port)
+	return port, nil
 }
 
-// StartUDPRelay reads from proxy UDP socket and forwards to all connected streams.
-func (b *Bridge) StartUDPRelay(ctx context.Context) {
+func (b *Bridge) allocateRelay(peerID peer.ID, stream network.Stream) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if relay, exists := b.peers[peerID]; exists {
+		if relay.stream != nil {
+			relay.stream.Reset()
+		}
+		relay.stream = stream
+		go b.streamToUDP(stream, peerID, relay.proxyConn)
+		return relay.proxyPort, nil
+	}
+
+	port := b.nextPort
+	b.nextPort++
+
+	addr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: port}
+	conn, err := net.ListenUDP("udp", addr)
+	if err != nil {
+		return 0, fmt.Errorf("bridge: failed to listen on UDP %d: %w", port, err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	relay := &peerRelay{
+		proxyConn: conn,
+		proxyPort: port,
+		stream:    stream,
+		cancel:    cancel,
+	}
+	b.peers[peerID] = relay
+
+	go b.udpToStream(ctx, relay, peerID)
+	go b.streamToUDP(stream, peerID, conn)
+
+	return port, nil
+}
+
+func (b *Bridge) RemovePeer(peerID peer.ID) {
+	b.mu.Lock()
+	relay, exists := b.peers[peerID]
+	if !exists {
+		b.mu.Unlock()
+		return
+	}
+	delete(b.peers, peerID)
+	b.mu.Unlock()
+
+	relay.cancel()
+	if relay.stream != nil {
+		relay.stream.Close()
+	}
+	relay.proxyConn.Close()
+	b.manager.logger.Infof("WG Bridge: removed relay for %s", peerID.ShortString())
+}
+
+func (b *Bridge) GetProxyPort(peerID peer.ID) (int, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	relay, exists := b.peers[peerID]
+	if !exists {
+		return 0, false
+	}
+	return relay.proxyPort, true
+}
+
+func (b *Bridge) udpToStream(ctx context.Context, relay *peerRelay, peerID peer.ID) {
 	buf := make([]byte, 65535)
 	for {
 		select {
@@ -92,48 +162,42 @@ func (b *Bridge) StartUDPRelay(ctx context.Context) {
 		default:
 		}
 
-		n, _, err := b.proxyConn.ReadFromUDP(buf)
+		n, _, err := relay.proxyConn.ReadFromUDP(buf)
 		if err != nil {
 			if ctx.Err() != nil {
 				return
 			}
-			b.manager.logger.Warnf("WG Bridge: UDP read error: %v", err)
+			b.manager.logger.Warnf("WG Bridge: UDP read for %s: %v", peerID.ShortString(), err)
 			continue
 		}
 
 		b.mu.Lock()
-		for pid, stream := range b.streams {
-			if err := writePacket(stream, buf[:n]); err != nil {
-				b.manager.logger.Warnf("WG Bridge: write to %s failed: %v", pid.ShortString(), err)
-				stream.Reset()
-				delete(b.streams, pid)
-			}
-		}
+		s := relay.stream
 		b.mu.Unlock()
+
+		if s == nil {
+			continue
+		}
+
+		if err := writePacket(s, buf[:n]); err != nil {
+			b.manager.logger.Warnf("WG Bridge: write to %s failed: %v", peerID.ShortString(), err)
+		}
 	}
 }
 
-// streamToUDP reads length-prefixed packets from libp2p and writes to local WG port.
-func (b *Bridge) streamToUDP(s network.Stream, remote peer.ID) {
-	defer func() {
-		b.mu.Lock()
-		delete(b.streams, remote)
-		b.mu.Unlock()
-		s.Close()
-	}()
-
+func (b *Bridge) streamToUDP(s network.Stream, peerID peer.ID, proxyConn *net.UDPConn) {
 	wgAddr := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: b.wgPort}
 
 	for {
 		pkt, err := readPacket(s)
 		if err != nil {
 			if err != io.EOF {
-				b.manager.logger.Warnf("WG Bridge: stream read from %s: %v", remote.ShortString(), err)
+				b.manager.logger.Warnf("WG Bridge: stream read from %s: %v", peerID.ShortString(), err)
 			}
 			return
 		}
 
-		if _, err := b.proxyConn.WriteToUDP(pkt, wgAddr); err != nil {
+		if _, err := proxyConn.WriteToUDP(pkt, wgAddr); err != nil {
 			b.manager.logger.Warnf("WG Bridge: UDP write error: %v", err)
 		}
 	}
@@ -141,15 +205,22 @@ func (b *Bridge) streamToUDP(s network.Stream, remote peer.ID) {
 
 func (b *Bridge) Close() error {
 	b.mu.Lock()
-	for _, s := range b.streams {
-		s.Close()
+	peers := make(map[peer.ID]*peerRelay, len(b.peers))
+	for k, v := range b.peers {
+		peers[k] = v
 	}
-	b.streams = make(map[peer.ID]network.Stream)
+	b.peers = make(map[peer.ID]*peerRelay)
 	b.mu.Unlock()
-	return b.proxyConn.Close()
-}
 
-// Length-prefixed framing: [2 bytes big-endian length][payload]
+	for _, relay := range peers {
+		relay.cancel()
+		if relay.stream != nil {
+			relay.stream.Close()
+		}
+		relay.proxyConn.Close()
+	}
+	return nil
+}
 
 func writePacket(w io.Writer, data []byte) error {
 	header := make([]byte, 2)

@@ -65,8 +65,7 @@ func (a *Agent) Start(ctx context.Context) error {
 	}
 	a.p2p_mgr = p2pMgr
 
-	proxyPort := a.cfg.WireGuardPort + 100
-	bridge, err := a.p2p_mgr.NewBridge(proxyPort, a.cfg.WireGuardPort)
+	bridge, err := a.p2p_mgr.NewBridge(a.cfg.WireGuardPort, a.cfg.WireGuardPort+100)
 	if err != nil {
 		return fmt.Errorf("failed to create bridge: %w", err)
 	}
@@ -122,7 +121,7 @@ func (a *Agent) Start(ctx context.Context) error {
 			a.logger.Infof("  Peer: %s (P2P ID: %s)", p.NodeId, p.PeerId)
 
 			if p.NodeId != a.nodeID && len(p.P2PAddrs) > 0 {
-				go func(addrs []string) {
+				go func(nodeID string, addrs []string) {
 					pInfo, err := a.p2p_mgr.GetPeerInfo(addrs[0])
 					if err != nil || pInfo == nil {
 						return
@@ -132,8 +131,8 @@ func (a *Agent) Start(ctx context.Context) error {
 					if err := a.p2p_mgr.ConnectAndPing(pingCtx, *pInfo); err != nil {
 						return
 					}
-					_ = a.bridge.ConnectToPeer(pingCtx, pInfo.ID)
-				}(p.P2PAddrs)
+					_, _ = a.bridge.AddPeer(pingCtx, pInfo.ID)
+				}(p.NodeId, p.P2PAddrs)
 			}
 		}
 	}
@@ -160,7 +159,21 @@ func (a *Agent) Start(ctx context.Context) error {
 			a.logger.Warnf("Failed to get public key for %s: %v", p.NodeId, err)
 			continue
 		}
-		endpoint := fmt.Sprintf("127.0.0.1:%d", a.cfg.WireGuardPort+100)
+
+		// Use the per-peer proxy port from bridge
+		peerIDStr := p.PeerId
+		pInfo, _ := a.p2p_mgr.GetPeerInfo(p.P2PAddrs[0])
+		var endpoint string
+		if pInfo != nil {
+			if port, ok := a.bridge.GetProxyPort(pInfo.ID); ok {
+				endpoint = fmt.Sprintf("127.0.0.1:%d", port)
+			}
+		}
+		if endpoint == "" {
+			a.logger.Warnf("No bridge proxy for %s, skipping WG peer", peerIDStr)
+			continue
+		}
+
 		wgCfg.Peers = append(wgCfg.Peers, wireguard.PeerConfig{
 			PublicKey:  peerKey,
 			Endpoint:   endpoint,
@@ -177,14 +190,10 @@ func (a *Agent) Start(ctx context.Context) error {
 		a.logger.Errorf("WireGuard config failed: %v", err)
 	}
 
-	a.wg.Add(4)
+	a.wg.Add(3)
 	go a.heartbeatLoop(ctx)
 	go a.tokenRefreshLoop(ctx)
 	go a.peerSyncLoop(ctx, netCfg.NetworkCidr)
-	go func() {
-		defer a.wg.Done()
-		a.bridge.StartUDPRelay(ctx)
-	}()
 
 	a.logger.Info("Agent is running")
 	return nil
@@ -337,18 +346,24 @@ func (a *Agent) syncPeers(ctx context.Context, networkCIDR string) {
 			}
 		}
 
+		var proxyPort int
 		if len(p2pAddrs) > 0 {
 			pInfo, err := a.p2p_mgr.GetPeerInfo(p2pAddrs[0])
 			if err == nil && pInfo != nil {
 				pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 				if err := a.p2p_mgr.ConnectAndPing(pingCtx, *pInfo); err == nil {
-					_ = a.bridge.ConnectToPeer(pingCtx, pInfo.ID)
+					proxyPort, _ = a.bridge.AddPeer(pingCtx, pInfo.ID)
 				}
 				cancel()
 			}
 		}
 
-		endpoint := fmt.Sprintf("127.0.0.1:%d", a.cfg.WireGuardPort+100)
+		if proxyPort == 0 {
+			a.logger.Warnf("Peer sync: no bridge for %s, skipping", nodeID)
+			continue
+		}
+
+		endpoint := fmt.Sprintf("127.0.0.1:%d", proxyPort)
 		if err := a.wg_mgr.AddPeer(wireguard.PeerConfig{
 			PublicKey:  pubKey,
 			Endpoint:   endpoint,
@@ -358,7 +373,7 @@ func (a *Agent) syncPeers(ctx context.Context, networkCIDR string) {
 			continue
 		}
 		a.activePeers[nodeID] = pubKey
-		a.logger.Infof("Peer sync: added new peer %s via bridge @ %s", nodeID, endpoint)
+		a.logger.Infof("Peer sync: added peer %s via bridge @ %s", nodeID, endpoint)
 	}
 
 	// Remove peers that are no longer online.
