@@ -71,16 +71,15 @@ Gordion VPN turns participating nodes into both clients and relay peers. It uses
 |-----------|--------|-------------|
 | **Agent** | Complete | VPN client with WireGuard tunnel management |
 
-### Observability
+### Observability Stack
 
-| Tool | Port | Status | Description |
-|------|------|--------|-------------|
-| **Prometheus** | 9091 | Complete | Metrics collection from all services |
-| **Grafana** | 3000 | Complete | Metrics visualization and dashboards |
-| **Distributed Tracing** | - | Complete | Cross-service trace_id propagation |
-| **Structured Logging** | - | Complete | Request-scoped logging with request_id |
-| **Rate Limiting** | - | Complete | Per-IP sliding window request limiting |
-| **Health Checks** | - | Complete | gRPC standard health checking protocol |
+| Tool | Port | Description |
+|------|------|-------------|
+| **Prometheus** | 9093 | Scrapes metrics from all services |
+| **Grafana** | 3000 | Dashboards (admin / admin) |
+| **Health Checks** | gRPC | Standard `grpc.health.v1` protocol on every service |
+| **Rate Limiting** | - | Per-IP sliding window, 100 req/min default |
+| **Distributed Tracing** | - | `x-trace-id` propagation via gRPC metadata |
 
 ## Project Structure
 
@@ -109,6 +108,7 @@ gordion-vpn/
 │       │   ├── agent/         # Lifecycle orchestration
 │       │   ├── client/        # gRPC client for all services
 │       │   ├── config/        # Agent configuration
+│       │   ├── p2p/           # libp2p host, hole punching, WG bridge
 │       │   └── wireguard/     # Tunnel management, key generation
 │       ├── Dockerfile
 │       └── test/              # End-to-end integration tests
@@ -132,6 +132,77 @@ gordion-vpn/
 └── Makefile                   # Build automation
 ```
 
+## P2P Data Plane
+
+Gordion VPN's data plane is designed to be **truly serverless** — after initial bootstrapping via the control plane, agents communicate directly with each other using **libp2p** as the transport layer.
+
+### Phase 1: Bootstrap & Peer Discovery
+
+```
+Agent A                    Control Plane               Agent B
+   │                            │                          │
+   ├──RegisterNode(publicKey)──►│                          │
+   │◄──(nodeID, token)──────────┤                          │
+   ├──GetConfig(token)─────────►│                          │
+   │◄──(vpn_ip, cidr)───────────┤                          │
+   ├──RegisterPeer(ip, peerID)─►│                          │
+   │                            │◄─RegisterPeer(ip,peerID)─┤
+   ├──ListPeers()──────────────►│                          │
+   │◄──[{ip, peerID, p2pAddrs}]─┤                          │
+   │                            │                          │
+   └─────── libp2p Ping (RTT check) ────────────────────►  │
+```
+
+Each agent registers its **libp2p PeerID** and multiaddresses alongside its WireGuard public key. This enables NAT traversal via **AutoNAT** and **Hole Punching** before WireGuard tunnel setup.
+
+### Phase 2: WireGuard ↔ libp2p Bridge 
+
+The core challenge with P2P VPNs is NAT — two agents behind residential routers cannot directly exchange WireGuard UDP packets. The solution is to **tunnel WireGuard traffic over the libp2p stream**, which has already punched through NAT.
+
+```
+┌─────────────────────────────────────┐
+│              Agent A                │
+│                                     │
+│  WireGuard TUN ──► Local UDP Sock   │
+│   (10.8.0.2)       (127.0.0.1:X)    │
+│         ▲               │           │
+│         │      Bridge   ▼           │
+│         └────────── libp2p Stream  ─┼──► (over internet, NAT punched)
+└─────────────────────────────────────┘
+                                          ┌─────────────────────────────────────┐
+                                          │              Agent B                │
+                                          │                                     │
+                                          │  libp2p Stream ──► Local UDP Sock   │
+                                          │                     (127.0.0.1:Y)   │
+                                          │                          │          │
+                                          │                          ▼          │
+                                          │              WireGuard TUN          │
+                                          │               (10.8.0.3)            │
+                                          └─────────────────────────────────────┘
+```
+
+**How it works:**
+
+1. **Custom Protocol** — A `/gordion/wg/1.0.0` libp2p protocol is registered on each agent.
+2. **Local UDP Socket** — WireGuard is configured to send its encrypted packets to a local loopback socket instead of directly to the peer's IP.
+3. **Bridge Goroutine** — Reads WireGuard packets from the local socket → writes them into the libp2p stream to the target peer.
+4. **Reverse Bridge** — Reads packets arriving on the libp2p stream → writes them to the local socket that WireGuard is listening on.
+
+This approach means WireGuard's end-to-end encryption is preserved — libp2p only carries the already-encrypted WireGuard UDP datagrams.
+
+### Peer Selection Strategy
+
+When multiple peers are available, the agent prioritizes by:
+
+| Priority | Criterion | Reason |
+|----------|-----------|--------|
+| 1 | **libp2p Ping RTT** | Lowest round-trip time = best performance |
+| 2 | **Reported Bandwidth** | Prefer high-bandwidth relay nodes |
+| 3 | **Region match** | Reduce geographic latency |
+| 4 | **Last Heartbeat** | Prefer recently active nodes |
+
+
+
 ## Getting Started
 
 ### Prerequisites
@@ -149,23 +220,22 @@ git clone https://github.com/saitddundar/gordion-vpn.git
 cd gordion-vpn
 
 # Start infrastructure (PostgreSQL, Redis, Prometheus, Grafana)
-make docker-up
+docker-compose -f deployments/docker-compose.dev.yml up -d postgres redis
 
 # Run database migrations
 docker exec -i gordion-postgres psql -U gordion -d gordion \
   < services/identity/migrations/0001_initial.sql
-
-# Build all services
-make build-all
+docker exec -i gordion-postgres psql -U gordion -d gordion \
+  < services/identity/migrations/0002_add_peer_id.sql
 
 # Start services (each in a separate terminal)
-cd services/identity  && ./identity-server.exe
-cd services/discovery && ./discovery-server.exe
-cd services/config    && ./config-server.exe
+cd services/identity  && go run ./cmd/server
+cd services/discovery && METRICS_PORT=9094 go run ./cmd/server
+cd services/config    && METRICS_PORT=9095 go run ./cmd/server
 
-# Start the agent
-make build-agent
-./services/agent/agent.exe
+# Start two agent instances to test P2P (optional)
+cd services/agent && P2P_PORT=4001 WIREGUARD_PORT=51820 go run ./cmd/agent
+cd services/agent && P2P_PORT=4002 WIREGUARD_PORT=51821 go run ./cmd/agent
 ```
 
 ### Local Development Tips
@@ -219,6 +289,8 @@ Discovery → Identity: ValidateToken(token) ← inter-service auth
 
 ### Security Layers
 
+| Layer | Description |
+|---|---|
 | Node Authentication | JWT tokens via Identity Service |
 | Inter-Service Auth | Token validation between services |
 | Transport Security | Optional TLS for gRPC (cert generation via `scripts/gen-certs.ps1`) |
@@ -230,16 +302,17 @@ Discovery → Identity: ValidateToken(token) ← inter-service auth
 
 ```
 Start:
-  1. Generate WireGuard keypair (Curve25519)
-  2. Register with Identity Service (with **Exponential Backoff**) → get token
-  3. Fetch network config (supports **Config Versioning**)
-  4. Request VPN IP address
-  5. Announce to Discovery Service
-  6. Discover other peers
-  7. Fetch peer public keys from Identity Service
-  8. Configure WireGuard tunnel (real tunnel or dry-run)
-  9. Start background loops:
-     - **Heartbeat Loop**: Keeps peer status alive
+  1. Start libp2p P2P host (unique PeerID, Hole Punching enabled)
+  2. Generate WireGuard keypair (Curve25519)
+  3. Register with Identity Service (with **Exponential Backoff** + PeerID) → get token
+  4. Fetch network config (supports **Config Versioning**)
+  5. Request VPN IP address
+  6. Announce to Discovery Service (IP, Port, PeerID, P2P multiaddrs)
+  7. Discover other peers → attempt **libp2p Handshake (Ping)** per peer
+  8. Fetch peer WireGuard public keys from Identity Service
+  9. Configure WireGuard tunnel (real tunnel or dry-run)
+ 10. Start background loops:
+     - **Heartbeat Loop**: Keeps peer status alive in Discovery
      - **Token Refresh Loop**: Automatically re-registers at 80% of token life
 
 Shutdown (Ctrl+C):
@@ -247,34 +320,35 @@ Shutdown (Ctrl+C):
   2. Stop heartbeat & refresh loops
   3. Release VPN IP from Config Service
   4. Tear down WireGuard tunnel
-  5. Close all gRPC connections
+  5. Close libp2p host
+  6. Close all gRPC connections
 ```
 
 ## Observability
 
-### Metrics
+### Metrics Endpoints
 
-All services expose Prometheus metrics via dedicated HTTP endpoints.
+All services expose Prometheus metrics on dedicated HTTP ports.
 
-| Service | Metrics Endpoint |
-|---------|-----------------|
-| Identity | `http://localhost:9090/metrics` |
-| Discovery | `http://localhost:9091/metrics` |
-| Config | `http://localhost:9092/metrics` |
-| Grafana | `http://localhost:3000` (admin / admin) |
-| Prometheus | `http://localhost:9091` |
+| Service | Metrics Port | Override |
+|---------|-------------|----------|
+| Identity | `9090` | `METRICS_PORT` env |
+| Discovery | `9094` | `METRICS_PORT` env |
+| Config | `9095` | `METRICS_PORT` env |
+| Prometheus | `9093` | docker-compose |
+| Grafana | `3000` | docker-compose (admin/admin) |
 
 | Metric | Description |
 |--------|-------------|
-| `gordion_grpc_requests_total` | Total gRPC request count by service, method, status |
+| `gordion_grpc_requests_total` | Total gRPC requests by service, method, status |
 | `gordion_grpc_request_duration_seconds` | Request latency histogram |
-| `gordion_active_connections` | Current active connections per service |
+| `gordion_active_connections` | Active connections per service |
 | `gordion_db_queries_total` | Database query count |
 | `gordion_db_query_duration_seconds` | Database query latency |
 
 ### Distributed Tracing
 
-Trace IDs propagate across services via gRPC metadata (`x-trace-id` header). A single request can be tracked across all services using the same trace ID.
+Trace IDs propagate via gRPC metadata (`x-trace-id`). A single request is traceable across all services:
 
 ```
 Agent [trace: a3f29b01] → Identity [trace: a3f29b01] → Config [trace: a3f29b01]
@@ -282,7 +356,7 @@ Agent [trace: a3f29b01] → Identity [trace: a3f29b01] → Config [trace: a3f29b
 
 ### Structured Logging
 
-Each request is assigned a unique `request_id` via the logging interceptor. Combined with `trace_id`, this provides full request visibility:
+Each request gets a unique `request_id`. Combined with `trace_id`:
 
 ```
 [a3f29b01] [identity] --> /identity.v1.IdentityService/RegisterNode
@@ -336,7 +410,7 @@ cd services/agent     && go test -v -count=1 ./test/...
 
 | Method | Request | Response |
 |--------|---------|----------|
-| `RegisterNode` | `public_key`, `version` | `node_id`, `token`, `expires_at` |
+| `RegisterNode` | `public_key`, `version`, `peer_id` | `node_id`, `token`, `expires_at` |
 | `ValidateToken` | `token` | `valid`, `node_id` |
 | `GetPublicKey` | `node_id` | `public_key` |
 
@@ -344,8 +418,8 @@ cd services/agent     && go test -v -count=1 ./test/...
 
 | Method | Request | Response |
 |--------|---------|----------|
-| `RegisterPeer` | `token`, `ip_address`, `port`, `region` | `success`, `message` |
-| `ListPeers` | `region`, `limit` | `peers[]` |
+| `RegisterPeer` | `token`, `ip_address`, `port`, `peer_id`, `p2p_addrs[]` | `success`, `message` |
+| `ListPeers` | `region`, `limit` | `peers[]` (includes `peer_id`, `p2p_addrs`) |
 | `Heartbeat` | `token`, `bandwidth` | `success`, `ttl` |
 
 ### Config Service (port 8003)
@@ -375,31 +449,39 @@ cd services/agent     && go test -v -count=1 ./test/...
 
 ## Development Status
 
-### Sprint 1: Foundation - Complete
+### Sprint 1: Foundation ✅
 - Monorepo setup, proto definitions, shared packages
 
-### Sprint 2: Identity Service - Complete
+### Sprint 2: Identity Service ✅
 - PostgreSQL storage, JWT authentication, gRPC API, integration tests, Prometheus metrics
 
-### Sprint 3: Discovery Service - Complete
+### Sprint 3: Discovery Service ✅
 - Redis registry, peer matching, heartbeat mechanism, gRPC API, integration tests, Prometheus metrics
 
-### Sprint 4: Config Service - Complete
+### Sprint 4: Config Service ✅
 - IP allocation (DHCP-like), network configuration, gRPC API, integration tests, Prometheus metrics
 
-### Sprint 5: Agent - Complete
+### Sprint 5: Agent ✅
 - WireGuard tunnel management, Curve25519 key generation, full lifecycle orchestration, end-to-end tests
 
-### Sprint 6: Security & Observability - Complete
+### Sprint 6: Security & Observability ✅
 - Inter-service authentication, optional TLS, secret management, structured logging, distributed tracing
 
-### Sprint 7: Resilience & Polish - Complete
-- gRPC Health Check protocol integration
-- Per-IP Rate Limiting (sliding window)
-- Agent: Exponential backoff retries & Token refresh loop
-- Configuration: SIGHUP hot-reload & Version-based caching
-- Global: Graceful shutdown with timeout (10s)
-- Makefile improvements & project audit fixes
+### Sprint 7: Resilience & Polish ✅
+- gRPC Health Check, Per-IP Rate Limiting, Exponential backoff, Token refresh
+- SIGHUP hot-reload, Config versioning, Graceful shutdown
+
+### Sprint 8: P2P Foundation ✅
+- libp2p host per agent (unique PeerID, Noise encryption)
+- NAT Traversal: AutoNAT + Hole Punching enabled
+- Peer discovery extended: peer_id & p2p_addrs stored in Identity DB and Discovery Redis
+- P2P Handshake (Ping) verified between two local agents (RTT ~0ms loopback)
+- CI/CD pipeline: GitHub Actions (build, integration tests, lint, govulncheck)
+
+### Sprint 9: WireGuard ↔ libp2p Bridge 🔜
+- `/gordion/wg/1.0.0` custom libp2p protocol
+- Local UDP socket loopback bridge between WireGuard and libp2p stream
+- True serverless P2P VPN over NAT
 
 ## Challenges & Solutions
 
