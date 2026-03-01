@@ -62,6 +62,7 @@ func (a *Agent) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to start p2p host: %w", err)
 	}
 	a.p2p_mgr = p2pMgr
+	a.p2p_mgr.RegisterWGProtocol()
 
 	a.logger.Info("Generating WireGuard keypair...")
 	keyPair, err := wireguard.GenerateKeyPair()
@@ -112,14 +113,19 @@ func (a *Agent) Start(ctx context.Context) error {
 			a.logger.Infof("  Peer: %s (P2P ID: %s)", p.NodeId, p.PeerId)
 
 			if p.NodeId != a.nodeID && len(p.P2PAddrs) > 0 {
-				go func(peerID string, addrs []string) {
+				go func(addrs []string) {
 					pInfo, err := a.p2p_mgr.GetPeerInfo(addrs[0])
-					if err == nil && pInfo != nil {
-						pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-						defer cancel()
-						_ = a.p2p_mgr.ConnectAndPing(pingCtx, *pInfo)
+					if err != nil || pInfo == nil {
+						return
 					}
-				}(p.PeerId, p.P2PAddrs)
+					pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+					defer cancel()
+					if err := a.p2p_mgr.ConnectAndPing(pingCtx, *pInfo); err != nil {
+						return
+					}
+					// Ping OK → test WG stream
+					_ = a.p2p_mgr.OpenWGStream(pingCtx, pInfo.ID)
+				}(p.P2PAddrs)
 			}
 		}
 	}
