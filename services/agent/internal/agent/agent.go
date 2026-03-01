@@ -331,22 +331,31 @@ func (a *Agent) syncPeers(ctx context.Context, networkCIDR string) {
 	a.peersMu.Lock()
 	defer a.peersMu.Unlock()
 
-	// Add new peers.
 	for nodeID, pubKey := range online {
 		if _, exists := a.activePeers[nodeID]; exists {
 			continue
 		}
-		// Find the endpoint for this peer.
-		var endpoint string
+
+		var p2pAddrs []string
 		for _, p := range peers {
 			if p.NodeId == nodeID {
-				endpoint = fmt.Sprintf("%s:%d", p.IpAddress, p.Port)
+				p2pAddrs = p.P2PAddrs
 				break
 			}
 		}
-		if endpoint == "" {
-			continue
+
+		if len(p2pAddrs) > 0 {
+			pInfo, err := a.p2p_mgr.GetPeerInfo(p2pAddrs[0])
+			if err == nil && pInfo != nil {
+				pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+				if err := a.p2p_mgr.ConnectAndPing(pingCtx, *pInfo); err == nil {
+					_ = a.bridge.ConnectToPeer(pingCtx, pInfo.ID)
+				}
+				cancel()
+			}
 		}
+
+		endpoint := fmt.Sprintf("127.0.0.1:%d", a.cfg.WireGuardPort+100)
 		if err := a.wg_mgr.AddPeer(wireguard.PeerConfig{
 			PublicKey:  pubKey,
 			Endpoint:   endpoint,
@@ -356,7 +365,7 @@ func (a *Agent) syncPeers(ctx context.Context, networkCIDR string) {
 			continue
 		}
 		a.activePeers[nodeID] = pubKey
-		a.logger.Infof("Peer sync: added new peer %s @ %s", nodeID, endpoint)
+		a.logger.Infof("Peer sync: added new peer %s via bridge @ %s", nodeID, endpoint)
 	}
 
 	// Remove peers that are no longer online.
