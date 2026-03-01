@@ -3,6 +3,7 @@ package grpc
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -14,8 +15,11 @@ import (
 
 type ConfigHandler struct {
 	configv1.UnimplementedConfigServiceServer
-	allocator     *allocator.Allocator
-	authClient    *auth.Client
+	allocator  *allocator.Allocator
+	authClient *auth.Client
+
+	// cfgMu protects hot-reloadable config fields below
+	cfgMu         sync.RWMutex
 	networkCIDR   string
 	mtu           int32
 	dnsServers    []string
@@ -43,25 +47,35 @@ func (h *ConfigHandler) GetConfig(ctx context.Context, req *configv1.GetConfigRe
 		return nil, status.Errorf(codes.Unauthenticated, "auth failed: %v", err)
 	}
 
+	// Snapshot config under read-lock
+	h.cfgMu.RLock()
+	version := h.configVersion
+	cidr := h.networkCIDR
+	mtu := h.mtu
+	dns := h.dnsServers
+	h.cfgMu.RUnlock()
+
 	// Version check: if client already has latest, skip sending full config
-	if req.ConfigVersion > 0 && req.ConfigVersion >= h.configVersion {
+	if req.ConfigVersion > 0 && req.ConfigVersion >= version {
 		return &configv1.GetConfigResponse{
-			ConfigVersion: h.configVersion,
+			ConfigVersion: version,
 			UpToDate:      true,
 		}, nil
 	}
 
 	return &configv1.GetConfigResponse{
-		NetworkCidr:   h.networkCIDR,
-		Mtu:           h.mtu,
-		DnsServers:    h.dnsServers,
-		ConfigVersion: h.configVersion,
+		NetworkCidr:   cidr,
+		Mtu:           mtu,
+		DnsServers:    dns,
+		ConfigVersion: version,
 		UpToDate:      false,
 	}, nil
 }
 
 // hot-swaps network config (called on SIGHUP)
 func (h *ConfigHandler) ReloadConfig(networkCIDR string, mtu int, dnsServers []string) {
+	h.cfgMu.Lock()
+	defer h.cfgMu.Unlock()
 	h.networkCIDR = networkCIDR
 	h.mtu = int32(mtu)
 	h.dnsServers = dnsServers
