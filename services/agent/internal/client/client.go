@@ -171,16 +171,17 @@ func (c *Client) ReleaseIP(ctx context.Context, token, nodeID, ip string) error 
 	})
 }
 
-func (c *Client) RegisterPeer(ctx context.Context, token, ip string, port int32, peerID string, p2pAddrs []string) error {
+func (c *Client) RegisterPeer(ctx context.Context, token, ip string, port int32, peerID string, p2pAddrs []string, isExitNode bool) error {
 	return c.cbDiscovery.Execute(func() error {
 		_, e := c.discovery.RegisterPeer(ctx, &discoveryv1.RegisterPeerRequest{
-			Token:     token,
-			IpAddress: ip,
-			Port:      port,
-			Region:    "global",
-			Bandwidth: 1000000,
-			PeerId:    peerID,
-			P2PAddrs:  p2pAddrs,
+			Token:      token,
+			IpAddress:  ip,
+			Port:       port,
+			Region:     "global",
+			Bandwidth:  1000000,
+			PeerId:     peerID,
+			P2PAddrs:   p2pAddrs,
+			IsExitNode: isExitNode,
 		})
 		return e
 	})

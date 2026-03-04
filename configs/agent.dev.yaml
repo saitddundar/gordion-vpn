@@ -13,3 +13,17 @@ wireguard_port: 51820
 
 # TLS: set to CA cert path for production, leave empty for insecure dev mode
 # tls_ca_cert: "../../certs/ca-cert.pem"
+
+# Exit Node Configuration
+# --- Mode 1: Normal peer (default) ---
+is_exit_node: false
+use_exit_node: false
+exit_node_id: ""
+
+# --- Mode 2: This machine IS the exit node (VPS) ---
+# is_exit_node: true
+
+# --- Mode 3: Route all internet traffic through an exit node ---
+# use_exit_node: true
+# exit_node_id: ""           # empty = auto-select best exit node
+# exit_node_id: "node-abc"   # specific exit node by ID

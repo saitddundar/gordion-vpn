@@ -12,6 +12,7 @@ import (
 	pkglogger "github.com/saitddundar/gordion-vpn/pkg/logger"
 	"github.com/saitddundar/gordion-vpn/services/agent/internal/client"
 	"github.com/saitddundar/gordion-vpn/services/agent/internal/config"
+	"github.com/saitddundar/gordion-vpn/services/agent/internal/gateway"
 	"github.com/saitddundar/gordion-vpn/services/agent/internal/p2p"
 	"github.com/saitddundar/gordion-vpn/services/agent/internal/wireguard"
 )
@@ -22,6 +23,7 @@ type Agent struct {
 	wg_mgr  *wireguard.Manager
 	p2p_mgr *p2p.Manager
 	bridge  *p2p.Bridge
+	gateway *gateway.Manager
 	logger  pkglogger.Logger
 
 	nodeID    string
@@ -46,11 +48,13 @@ func New(cfg *config.Config, logger pkglogger.Logger) (*Agent, error) {
 	}
 
 	wgMgr := wireguard.NewManager(logger, *cfg.DryRun)
+	gwMgr := gateway.New(logger, "")
 
 	return &Agent{
 		cfg:         cfg,
 		client:      c,
 		wg_mgr:      wgMgr,
+		gateway:     gwMgr,
 		logger:      logger,
 		activePeers: make(map[string]string),
 	}, nil
@@ -107,10 +111,19 @@ func (a *Agent) Start(ctx context.Context) error {
 	a.logger.Infof("VPN IP: %s, Subnet: %s, Gateway: %s", ip, subnet, gw)
 
 	a.logger.Info("Announcing to Discovery Service...")
-	if err := a.client.RegisterPeer(ctx, a.token, a.vpnIP, int32(a.cfg.WireGuardPort), a.p2p_mgr.PeerID(), a.p2p_mgr.Multiaddrs()); err != nil {
+	if err := a.client.RegisterPeer(ctx, a.token, a.vpnIP,
+		int32(a.cfg.WireGuardPort), a.p2p_mgr.PeerID(),
+		a.p2p_mgr.Multiaddrs(), a.cfg.IsExitNode); err != nil {
 		return err
 	}
 	a.logger.Info("Peer registered")
+
+	// If this peer is an exit node, enable IP forwarding + NAT
+	if a.cfg.IsExitNode {
+		if err := a.gateway.Enable(); err != nil {
+			a.logger.Warnf("Gateway enable failed (non-fatal in dry-run): %v", err)
+		}
+	}
 
 	peers, err := a.client.DiscoverPeers(ctx, a.getToken(), 10)
 	if err != nil {

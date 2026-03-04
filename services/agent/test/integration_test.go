@@ -74,7 +74,7 @@ func TestAgentFlow(t *testing.T) {
 
 	// Step 5: Register as peer
 	t.Run("RegisterPeer", func(t *testing.T) {
-		err := c.RegisterPeer(ctx, token, vpnIP, 51820, "test-peer-id", []string{"/ip4/127.0.0.1/tcp/4001/p2p/test-peer-id"})
+		err := c.RegisterPeer(ctx, token, vpnIP, 51820, "test-peer-id", []string{"/ip4/127.0.0.1/tcp/4001/p2p/test-peer-id"}, false)
 		if err != nil {
 			t.Fatalf("RegisterPeer failed: %v", err)
 		}
