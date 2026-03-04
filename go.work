@@ -2,6 +2,7 @@ go 1.25.4
 
 use (
 	.
+	./cli
 	./pkg/circuitbreaker
 	./pkg/logger
 	./pkg/metrics
