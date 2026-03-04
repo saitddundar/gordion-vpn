@@ -1,30 +1,34 @@
 # Gordion VPN
 
-[![Go Version](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go)](https://go.dev/)
+[![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Status](https://img.shields.io/badge/status-experimental-orange)](#development-status)
+[![Status](https://img.shields.io/badge/status-active--development-orange)](#development-status)
+[![CI](https://github.com/saitddundar/gordion-vpn/actions/workflows/ci.yml/badge.svg)](https://github.com/saitddundar/gordion-vpn/actions)
 
-A decentralized, peer-to-peer VPN built with a microservice control plane and a WireGuard-based data plane.
+A self-hosted, peer-to-peer mesh VPN built with Go. Connects devices securely across NAT boundaries using WireGuard tunnels transported over libp2p — with optional exit node support for internet privacy.
 
 ## Overview
 
-Gordion VPN turns participating nodes into both clients and relay peers. It uses a modern microservices control plane (Identity, Discovery, Config) to coordinate a fully encrypted WireGuard mesh, aiming for secure, scalable, and geographically distributed VPN connectivity.
+Gordion VPN turns participating nodes into both clients and relay peers. It uses a modern microservices control plane (Identity, Discovery, Config) to coordinate a fully encrypted WireGuard mesh, with NAT traversal handled by libp2p hole punching.
+
+**Two modes:**
+
+| Mode | What it does |
+|------|-------------|
+| **Mesh VPN** | Connect your devices into a private encrypted network across NAT/firewalls (like Tailscale, self-hosted) |
+| **Exit Node** | Route all internet traffic through a designated VPS — hiding your IP from sites and your ISP (like NordVPN, self-hosted) |
 
 ## Key Features
 
-- **Decentralized topology**: Each node can act as both a client and a relay, reducing reliance on a single choke point.
-- **WireGuard data plane**: Curve25519-based key exchange with a minimal, modern VPN protocol.
-- **Microservice control plane**: Identity, discovery, and configuration services are isolated and independently deployable.
-- **Strong authentication**: JWT-based node identities with inter-service token validation.
-- **Observability by default**: Prometheus metrics, structured logging, and trace ID propagation across services.
-- **Resilience focus**: Health checks, exponential backoff, graceful shutdown, and rate limiting integrated into the core services.
-
-## Use Cases
-
-- **Self-hosted, privacy-focused VPN** where you control both the control plane and the data plane.
-- **Mesh-style connectivity** between multiple regions, offices, or homelabs without central VPN appliances.
-- **Experimentation platform** for distributed systems concepts: service discovery, tracing, rate limiting, and resilience patterns.
-- **Educational reference** for a production-style Go microservices stack with gRPC, WireGuard, and observability tooling.
+- **Automatic peer discovery** — agents find and connect to each other without manual key exchange
+- **NAT traversal** — connects devices behind home routers via libp2p hole punching (no relay needed)
+- **WireGuard data plane** — Curve25519 key exchange, ChaCha20-Poly1305 payload encryption
+- **Exit node support** — route all internet traffic through a VPS for IP masking and geo-bypass
+- **DNS leak protection** — DNS queries route through the VPN tunnel when exit node is active
+- **TLS for control plane** — gRPC connections between agent and services are optionally TLS-encrypted
+- **Authenticated peer listing** — peer enumeration requires a valid JWT token (no anonymous scanning)
+- **Observability** — Prometheus metrics, structured logging (zerolog), distributed trace IDs
+- **Resilience** — circuit breakers, exponential backoff, rate limiting, graceful shutdown, SIGHUP config hot-reload
 
 ## Architecture
 
@@ -32,44 +36,47 @@ Gordion VPN turns participating nodes into both clients and relay peers. It uses
 ┌──────────────────────────────────────────────────────────────┐
 │                       CONTROL PLANE                          │
 │                                                              │
-│  ┌──────────────┐  ┌────────────────┐  ┌────────────────┐    │
-│  │   Identity   │  │   Discovery    │  │     Config     │    │
-│  │   Service    │  │    Service     │  │    Service     │    │
-│  │  PostgreSQL  │  │     Redis      │  │     Redis      │    │
-│  │   JWT Auth   │  │ Peer Registry  │  │ IP Allocator   │    │
-│  └──────────────┘  └────────────────┘  └────────────────┘    │
+│  ┌──────────────┐  ┌────────────────┐  ┌────────────────┐   │
+│  │   Identity   │  │   Discovery    │  │     Config     │   │
+│  │   Service    │  │    Service     │  │    Service     │   │
+│  │  PostgreSQL  │  │     Redis      │  │     Redis      │   │
+│  │   JWT Auth   │  │ Peer Registry  │  │ IP Allocator   │   │
+│  └──────────────┘  └────────────────┘  └────────────────┘   │
 │         ↑                  ↑                   ↑             │
-│  ┌──────────────────────────────────────────────────────┐    │
-│  │            Prometheus + Grafana                      │    │
-│  │         Distributed Tracing (trace_id)               │    │
-│  │         Rate Limiting & Health Checks                │    │
-│  └──────────────────────────────────────────────────────┘    │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │            Prometheus + Grafana                      │   │
+│  │         Distributed Tracing (trace_id)               │   │
+│  │         Rate Limiting & Health Checks                │   │
+│  └──────────────────────────────────────────────────────┘   │
 └──────────────────────────────────────────────────────────────┘
-           ↑                 ↑                   ↑
-           │          gRPC + TLS                 │
+                    ↑ gRPC + TLS (optional) ↑
 ┌──────────────────────────────────────────────────────────────┐
 │                        DATA PLANE                            │
 │                                                              │
-│  ┌──────────┐                             ┌──────────┐       │
-│  │  Agent   │ ◄══ WireGuard Tunnel ══►    │  Agent   │       │
-│  │ (Node A) │      Curve25519 Keys        │ (Node B) │       │
-│  └──────────┘                             └──────────┘       │
+│  ┌──────────┐    libp2p + WireGuard    ┌────────────────┐   │
+│  │  Agent   │◄══════════════════════►  │  Agent (VPS)   │   │
+│  │ (client) │    NAT punched, P2P      │  [exit node]   │   │
+│  └──────────┘                          └────────────────┘   │
+│                                               │              │
+│                           iptables MASQUERADE │              │
+│                                               ▼              │
+│                                          Internet            │
 └──────────────────────────────────────────────────────────────┘
 ```
 
-### Control Plane (Microservices)
+### Control Plane Services
 
-| Service | Port | Status | Description |
-|---------|------|--------|-------------|
-| **Identity Service** | 8001 | Complete | Node authentication, JWT token management |
-| **Discovery Service** | 8002 | Complete | Peer discovery, registration, heartbeat |
-| **Config Service** | 8003 | Complete | Network configuration, IP allocation |
+| Service | Port | Storage | Description |
+|---------|------|---------|-------------|
+| **Identity Service** | 8001 | PostgreSQL | Node registration, JWT token issuance & validation, public key storage |
+| **Discovery Service** | 8002 | Redis | Peer registry, exit node announcements, heartbeat, authenticated ListPeers |
+| **Config Service** | 8003 | Redis | Network CIDR, IP allocation (DHCP-like), DNS config, SIGHUP hot-reload |
 
 ### Data Plane
 
-| Component | Status | Description |
-|-----------|--------|-------------|
-| **Agent** | Complete | VPN client with WireGuard tunnel management |
+| Component | Description |
+|-----------|-------------|
+| **Agent** | VPN client: WireGuard tunnel + libp2p P2P host + gateway (exit node NAT) |
 
 ### Observability Stack
 
@@ -77,9 +84,9 @@ Gordion VPN turns participating nodes into both clients and relay peers. It uses
 |------|------|-------------|
 | **Prometheus** | 9093 | Scrapes metrics from all services |
 | **Grafana** | 3000 | Dashboards (admin / admin) |
-| **Health Checks** | gRPC | Standard `grpc.health.v1` protocol on every service |
-| **Rate Limiting** | - | Per-IP sliding window, 100 req/min default |
-| **Distributed Tracing** | - | `x-trace-id` propagation via gRPC metadata |
+| **Health Checks** | gRPC | Standard `grpc.health.v1` on every service |
+| **Rate Limiting** | — | Per-IP sliding window, 100 req/min default |
+| **Distributed Tracing** | — | `x-trace-id` propagation via gRPC metadata |
 
 ## Project Structure
 
@@ -102,18 +109,19 @@ gordion-vpn/
 │   │   ├── internal/          # Config, allocator, gRPC handler
 │   │   ├── Dockerfile
 │   │   └── test/              # Integration tests
-│   └── agent/                 # VPN agent (WireGuard)
+│   └── agent/                 # VPN agent (WireGuard + libp2p)
 │       ├── cmd/agent/         # Entry point
 │       ├── internal/
 │       │   ├── agent/         # Lifecycle orchestration
-│       │   ├── client/        # gRPC client for all services
-│       │   ├── config/        # Agent configuration
-│       │   ├── p2p/           # libp2p host, hole punching, WG bridge
-│       │   └── wireguard/     # Tunnel management, key generation
+│       │   ├── client/        # gRPC client (TLS-aware, circuit breaker)
+│       │   ├── config/        # Agent configuration (YAML + env override)
+│       │   ├── gateway/       # Exit node: IP forwarding + NAT (Linux/Windows/macOS)
+│       │   ├── p2p/           # libp2p host, hole punching, WireGuard bridge
+│       │   └── wireguard/     # Tunnel management, key generation (0600 permissions)
 │       ├── Dockerfile
 │       └── test/              # End-to-end integration tests
 ├── pkg/
-│   ├── auth/                  # Inter-service authentication client
+│   ├── auth/                  # Inter-service JWT validation client
 │   ├── circuitbreaker/        # Circuit breaker for gRPC client resilience
 │   ├── config/                # Configuration management
 │   ├── grpcutil/              # gRPC error utilities
@@ -122,7 +130,7 @@ gordion-vpn/
 │   ├── metrics/               # Prometheus metrics
 │   ├── middleware/            # Logging interceptor (request_id)
 │   ├── ratelimit/             # Per-IP sliding window rate limiter
-│   ├── tlsutil/               # TLS credential helpers
+│   ├── tlsutil/               # TLS credential helpers (server + client)
 │   ├── tracing/               # Distributed tracing (trace_id propagation)
 │   └── proto/                 # Generated protobuf code
 ├── api/proto/                 # Protocol Buffer definitions
@@ -131,14 +139,13 @@ gordion-vpn/
 │   └── config/v1/
 ├── deployments/               # Docker Compose, Prometheus config
 ├── configs/                   # Service configuration files
-├── docs/                      # Documentation (architecture notes, design decisions)
 ├── scripts/                   # Proto generation, cert generation
 └── Makefile                   # Build automation
 ```
 
 ## P2P Data Plane
 
-Gordion VPN's data plane is designed to be **truly serverless** — after initial bootstrapping via the control plane, agents communicate directly with each other using **libp2p** as the transport layer.
+Gordion VPN's data plane is designed to be **truly P2P** — after initial bootstrapping via the control plane, agents communicate directly using **libp2p** as the transport layer.
 
 ### Phase 1: Bootstrap & Peer Discovery
 
@@ -151,8 +158,8 @@ Agent A                    Control Plane               Agent B
    │◄──(vpn_ip, cidr)───────────┤                          │
    ├──RegisterPeer(ip, peerID)─►│                          │
    │                            │◄─RegisterPeer(ip,peerID)─┤
-   ├──ListPeers()──────────────►│                          │
-   │◄──[{ip, peerID, p2pAddrs}]─┤                          │
+   ├──ListPeers(token)─────────►│                          │
+   │◄──[{ip, peerID, p2pAddrs,isExitNode}]─────────────────┤
    │                            │                          │
    └─────── libp2p Ping (RTT check) ────────────────────►  │
 ```
@@ -161,14 +168,14 @@ Each agent registers its **libp2p PeerID** and multiaddresses alongside its Wire
 
 ### Phase 2: WireGuard ↔ libp2p Bridge
 
-The core challenge with P2P VPNs is NAT — two agents behind residential routers cannot directly exchange WireGuard UDP packets. The solution is to **tunnel WireGuard traffic over the libp2p stream**, which has already punched through NAT.
+The core challenge with P2P VPNs is NAT — two agents behind home routers cannot directly exchange WireGuard UDP packets. The solution is to **tunnel WireGuard traffic over the libp2p stream**, which has already punched through NAT.
 
 ```
 ┌─────────────────────────────────────┐
 │              Agent A                │
 │                                     │
 │  WireGuard TUN ──► Local UDP Sock   │
-│   (10.8.0.2)       (127.0.0.1:X)    │
+│   (10.8.0.2)       (127.0.0.1:X)   │
 │         ▲               │           │
 │         │      Bridge   ▼           │
 │         └────────── libp2p Stream  ─┼──► (over internet, NAT punched)
@@ -178,9 +185,9 @@ The core challenge with P2P VPNs is NAT — two agents behind residential router
                                           │                                     │
                                           │  libp2p Stream ──► Local UDP Sock   │
                                           │                     (127.0.0.1:Y)   │
-                                          │                          │          │
-                                          │                          ▼          │
-                                          │              WireGuard TUN          │
+                                          │                          │           │
+                                          │                          ▼           │
+                                          │              WireGuard TUN           │
                                           │               (10.8.0.3)            │
                                           └─────────────────────────────────────┘
 ```
@@ -189,13 +196,35 @@ The core challenge with P2P VPNs is NAT — two agents behind residential router
 
 1. **Custom Protocol** — A `/gordion/wg/1.0.0` libp2p protocol is registered on each agent. When two agents discover each other, one opens a bidirectional stream using this protocol.
 2. **Per-Peer Proxy Ports** — Each peer gets a dedicated local UDP port (e.g., peer B → `:51920`, peer C → `:51921`). WireGuard's endpoint is set to this loopback address, ensuring packets for different peers never mix.
-3. **Length-Prefixed Framing** — UDP datagrams are encapsulated with a 2-byte big-endian length header before being written to the libp2p stream. This prevents packet boundary loss, which is critical because libp2p streams are TCP-like (byte-oriented), while WireGuard expects discrete UDP datagrams.
+3. **Length-Prefixed Framing** — UDP datagrams are encapsulated with a **2-byte big-endian length header** before being written to the libp2p stream. This prevents packet boundary loss, which is critical because libp2p streams are TCP-like (byte-oriented), while WireGuard expects discrete UDP datagrams.
 4. **Outgoing Bridge** — A goroutine reads WireGuard packets from the peer's proxy port → prepends the length header → writes them into the specific libp2p stream.
 5. **Incoming Bridge** — A goroutine reads the length header from the libp2p stream → reads exactly that many bytes → writes the reconstructed UDP datagram to WireGuard's listen port.
 6. **Stream Race Prevention** — Only the peer with the lexicographically larger PeerID initiates the stream. The other side waits for the incoming connection. This deterministic rule eliminates duplicate streams and race conditions.
 7. **Bridge Lifecycle** — If a libp2p stream drops (network change, peer disconnect), the bridge goroutines exit cleanly. On the next `peerSyncLoop` cycle, the agent rediscovers the peer and re-establishes the bridge automatically.
 
-**Performance note:** The libp2p layer adds minimal overhead — it only transports already-encrypted WireGuard UDP datagrams. There is no double encryption; WireGuard's Curve25519 + ChaCha20-Poly1305 handles all payload security.
+> **Performance note:** The libp2p layer adds minimal overhead — it only transports already-encrypted WireGuard UDP datagrams. There is no double encryption; WireGuard's Curve25519 + ChaCha20-Poly1305 handles all payload security.
+
+### Exit Node (Optional)
+
+When `is_exit_node: true` is set on a peer (typically a VPS), it:
+1. Announces itself to Discovery with `is_exit_node = true`
+2. Enables kernel IP forwarding (`sysctl net.ipv4.ip_forward=1`)
+3. Configures NAT masquerade (`iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE`)
+
+When a client sets `use_exit_node: true`:
+1. Finds an exit node from the peer list (specific by ID, or auto-selects first available)
+2. Sets that peer's `AllowedIPs = 0.0.0.0/0, ::/0` — all internet traffic goes through it
+3. Overrides WireGuard's `DNS` field (default: `1.1.1.1, 1.0.0.1`) — **DNS queries also go through the tunnel**, preventing DNS leaks to the local ISP resolver
+
+```
+Normal mode:   Device ──wg──► Peer    (private mesh, same internet IP)
+
+Exit node:     Device ──wg──► VPS ──► Internet
+                              ↑
+               ISP only sees encrypted traffic to VPS
+               Websites see VPS IP, not your real IP
+               DNS queries go through the tunnel (no leaks)
+```
 
 ### Peer Selection Strategy
 
@@ -208,15 +237,13 @@ When multiple peers are available, the agent prioritizes by:
 | 3 | **Region match** | Reduce geographic latency |
 | 4 | **Last Heartbeat** | Prefer recently active nodes |
 
-
-
 ## Getting Started
 
 ### Prerequisites
 
-- Go 1.25+
+- Go 1.22+
 - Docker and Docker Compose
-- Protocol Buffers compiler (`protoc`)
+- WireGuard (only for `dry_run: false` — real tunnel mode)
 - Make (optional, for build automation)
 
 ### Quick Start
@@ -227,7 +254,7 @@ git clone https://github.com/saitddundar/gordion-vpn.git
 cd gordion-vpn
 
 # Start infrastructure (PostgreSQL, Redis, Prometheus, Grafana)
-docker-compose -f deployments/docker-compose.dev.yml up -d postgres redis
+docker compose -f deployments/docker-compose.dev.yml up -d postgres redis
 
 # Run database migrations
 docker exec -i gordion-postgres psql -U gordion -d gordion \
@@ -240,29 +267,41 @@ cd services/identity  && go run ./cmd/server
 cd services/discovery && METRICS_PORT=9094 go run ./cmd/server
 cd services/config    && METRICS_PORT=9095 go run ./cmd/server
 
-# Start two agent instances to test P2P (optional)
+# Start two agent instances to test P2P (dry_run: true by default — no WireGuard needed)
 cd services/agent && P2P_PORT=4001 WIREGUARD_PORT=51820 go run ./cmd/agent
 cd services/agent && P2P_PORT=4002 WIREGUARD_PORT=51821 go run ./cmd/agent
 ```
 
+### TLS Setup (Production)
+
+```bash
+# Generate self-signed dev certificates
+.\scripts\gen-certs.ps1   # Windows
+# bash scripts/gen-certs.sh  # Linux/macOS
+
+# Then set in agent config:
+# tls_ca_cert: "../../certs/ca-cert.pem"
+```
+
+Services detect `certs/server-cert.pem` at startup — TLS is enabled automatically if present; otherwise falls back to insecure mode (fine for local development).
+
 ### Local Development Tips
 
-- Run `make proto` after editing any file under `api/proto` to regenerate gRPC stubs in `pkg/proto`.
-- Use `make tidy-all` to keep every module's `go.mod` in sync when you add a dependency.
-- Export `GORDION_ENV=dev` (or pass `--env dev`) so each service picks up the matching file in `configs/`.
-- `make docker-logs` (or `docker compose logs -f` inside `deployments/`) is handy for tailing Postgres/Redis while testing the agent.
+- Run `.\scripts\proto-gen.ps1` after editing any `.proto` file to regenerate gRPC stubs.
+- Use `make tidy-all` to keep every module's `go.mod` in sync when adding a dependency.
+- Export `GORDION_ENV=dev` so each service picks up the matching file in `configs/`.
+- `docker compose logs -f` inside `deployments/` is handy for tailing Postgres/Redis while testing.
 
 ### Config Hot-Reload
 
 The **Config Service** supports zero-downtime configuration updates via `SIGHUP`:
 
 ```bash
-# Modify configs/config.dev.yaml
-# Then send SIGHUP to the config service process
+# Modify configs/config.dev.yaml, then:
 kill -SIGHUP <pid>
 ```
 
-The service will re-read the configuration and increment the **Config Version**, which agents will automatically detect on their next refresh.
+The service re-reads the configuration and increments the **Config Version**, which agents automatically detect on their next refresh cycle.
 
 ### Environment Variables
 
@@ -273,9 +312,50 @@ The service will re-read the configuration and increment the **Config Version**,
 | `IDENTITY_ADDR` | `localhost:8001` | Identity service address |
 | `DISCOVERY_ADDR` | `localhost:8002` | Discovery service address |
 | `CONFIG_ADDR` | `localhost:8003` | Config service address |
-| `TLS_CERT` | - | TLS certificate path (optional) |
-| `TLS_KEY` | - | TLS private key path (optional) |
+| `TLS_CERT` | — | Server TLS certificate path |
+| `TLS_KEY` | — | Server TLS private key path |
+| `TLS_CA_CERT` | — | CA cert path for agent gRPC TLS |
+| `IS_EXIT_NODE` | `false` | Run this agent as an exit node |
+| `USE_EXIT_NODE` | `false` | Route internet traffic via exit node |
+| `EXIT_NODE_ID` | `` | Specific exit node ID (empty = auto-select) |
+| `EXIT_NODE_DNS` | `1.1.1.1, 1.0.0.1` | DNS server used when exit node is active |
 | `LOG_LEVEL` | `debug` | Log level (debug, info, warn, error) |
+
+## Agent Configuration
+
+```yaml
+# configs/agent.dev.yaml
+identity_addr: "localhost:8001"
+discovery_addr: "localhost:8002"
+config_addr:    "localhost:8003"
+
+log_level: "debug"
+heartbeat_interval: 25       # seconds
+peer_sync_interval: 60       # seconds between peer discovery cycles
+
+wireguard_port: 51820
+p2p_port: 4001
+
+dry_run: true   # true = log only, no real tunnel (useful without WireGuard installed)
+
+# TLS: leave empty for insecure dev mode
+# tls_ca_cert: "../../certs/ca-cert.pem"
+
+# Exit Node Configuration:
+# -- Mode 1 (normal peer, default):
+is_exit_node: false
+use_exit_node: false
+exit_node_id: ""
+
+# -- Mode 2 (this machine IS the exit node, e.g. a VPS):
+# is_exit_node: true
+
+# -- Mode 3 (use an exit node for internet privacy):
+# use_exit_node: true
+# exit_node_id: ""               # auto-select first available exit node
+# exit_node_id: "node-abc123"    # or pin to a specific node
+# exit_node_dns: "1.1.1.1, 1.0.0.1"  # DNS via tunnel (prevents DNS leaks)
+```
 
 ## Security
 
@@ -286,49 +366,68 @@ Agent → Identity Service: RegisterNode(public_key)
                        ← token + node_id
 
 Agent → Config Service: GetConfig(token)
-Config → Identity: ValidateToken(token) ← inter-service auth
+Config → Identity: ValidateToken(token)   ← inter-service auth
                 ← network config
 
-Agent → Discovery: RegisterPeer(token, ip, port)
+Agent → Discovery: RegisterPeer(token, ip, port, is_exit_node)
 Discovery → Identity: ValidateToken(token) ← inter-service auth
                    ← success
+
+Agent → Discovery: ListPeers() [with token in gRPC metadata]
+Discovery → Identity: ValidateToken(token) ← unauthenticated calls rejected
+                   ← peer list
 ```
+
+### Security Hardening Applied
+
+| Concern | Fix |
+|---------|-----|
+| Unencrypted gRPC | Optional TLS — CA cert path enables encrypted transport for agent ↔ services |
+| WireGuard private key world-readable | Written with `0600` permissions to `os.UserConfigDir()/gordion/` |
+| Unauthenticated peer enumeration | `ListPeers` validates JWT from gRPC metadata |
+| Subnet hijack via AllowedIPs | Each peer uses `/32` host route; only exit node gets `0.0.0.0/0` when explicitly selected |
+| DNS leaks with exit node | WireGuard `DNS` field overridden to route queries through tunnel |
+| Data races (token / config fields) | `sync.RWMutex` guards shared fields accessed across goroutines |
+| Per-IP abuse | Rate limiting: 100 req/min sliding window on all services |
 
 ### Security Layers
 
 | Layer | Description |
-|---|---|
+|-------|-------------|
 | Node Authentication | JWT tokens via Identity Service |
 | Inter-Service Auth | Token validation between services |
 | Transport Security | Optional TLS for gRPC (cert generation via `scripts/gen-certs.ps1`) |
-| Tunnel Encryption | WireGuard with Curve25519 key exchange |
-| Abuse Prevention | Per-IP Rate Limiting (100 req/min default) |
-| Secret Management | Environment variable overrides, `.env` support |
+| Tunnel Encryption | WireGuard: Curve25519 key exchange + ChaCha20-Poly1305 |
+| Peer Auth | Libp2p Noise protocol (authenticated key exchange on P2P layer) |
+| Abuse Prevention | Per-IP sliding window rate limiting (100 req/min default) |
+| Secret Management | Environment variable overrides, no secrets in config files |
 
 ## Agent Lifecycle
 
 ```
 Start:
-  1. Start libp2p P2P host (unique PeerID, Hole Punching enabled)
-  2. Generate WireGuard keypair (Curve25519)
-  3. Register with Identity Service (with **Exponential Backoff** + PeerID) → get token
-  4. Fetch network config (supports **Config Versioning**)
-  5. Request VPN IP address
-  6. Announce to Discovery Service (IP, Port, PeerID, P2P multiaddrs)
-  7. Discover other peers → attempt **libp2p Handshake (Ping)** per peer
-  8. Fetch peer WireGuard public keys from Identity Service
-  9. Configure WireGuard tunnel (real tunnel or dry-run)
- 10. Start background loops:
-     - **Heartbeat Loop**: Keeps peer status alive in Discovery
-     - **Token Refresh Loop**: Automatically re-registers at 80% of token life
+  1.  Start libp2p P2P host (unique PeerID, Noise encryption, Hole Punching)
+  2.  Generate WireGuard keypair (Curve25519)
+  3.  Register with Identity Service (Exponential Backoff + PeerID) → get token
+  4.  Fetch network config (supports Config Versioning)
+  5.  Request VPN IP address
+  6.  Announce to Discovery Service (IP, Port, PeerID, P2P multiaddrs, is_exit_node)
+  7.  If is_exit_node: enable IP forwarding + iptables NAT (gateway package)
+  8.  Discover other peers → attempt libp2p Handshake (Ping) per peer
+  9.  Fetch peer WireGuard public keys from Identity Service
+ 10.  Configure WireGuard tunnel (real tunnel or dry-run)
+ 11.  Start background loops:
+       • Heartbeat Loop: keeps peer alive in Discovery
+       • Token Refresh Loop: re-registers at 80% of token lifetime
+       • Peer Sync Loop: discovers new peers, removes stale ones, updates WireGuard config
 
-Shutdown (Ctrl+C):
-  1. **Graceful Shutdown**: Wait for in-flight requests (10s timeout)
-  2. Stop heartbeat & refresh loops
-  3. Release VPN IP from Config Service
-  4. Tear down WireGuard tunnel
-  5. Close libp2p host
-  6. Close all gRPC connections
+Shutdown (Ctrl+C / SIGTERM):
+  1.  Graceful Shutdown: cancel context, wait for loops to exit (WaitGroup)
+  2.  Release VPN IP from Config Service
+  3.  Tear down WireGuard tunnel
+  4.  If is_exit_node: remove iptables rules (gateway.Disable)
+  5.  Close libp2p host + bridge streams
+  6.  Close all gRPC connections
 ```
 
 ## Observability
@@ -423,11 +522,11 @@ cd services/agent     && go test -v -count=1 ./test/...
 
 ### Discovery Service (port 8002)
 
-| Method | Request | Response |
-|--------|---------|----------|
-| `RegisterPeer` | `token`, `ip_address`, `port`, `peer_id`, `p2p_addrs[]` | `success`, `message` |
-| `ListPeers` | `region`, `limit` | `peers[]` (includes `peer_id`, `p2p_addrs`) |
-| `Heartbeat` | `token`, `bandwidth` | `success`, `ttl` |
+| Method | Auth | Request | Response |
+|--------|------|---------|----------|
+| `RegisterPeer` | token in body | `ip_address`, `port`, `peer_id`, `p2p_addrs`, `is_exit_node` | `success`, `message` |
+| `ListPeers` | token in metadata | `region`, `limit` | `peers[]` (includes `peer_id`, `p2p_addrs`, `is_exit_node`) |
+| `Heartbeat` | token in body | `bandwidth` | `success`, `ttl` |
 
 ### Config Service (port 8003)
 
@@ -440,86 +539,85 @@ cd services/agent     && go test -v -count=1 ./test/...
 ## Tech Stack
 
 | Category | Technology |
-|----------|-----------|
-| Language | Go 1.25 |
+|----------|-----------| 
+| Language | Go 1.22+ |
+| VPN Tunnel | WireGuard (Curve25519 + ChaCha20-Poly1305) |
+| P2P Transport | libp2p (Noise, Yamux, AutoNAT, Hole Punching) |
 | RPC | gRPC, Protocol Buffers |
 | Database | PostgreSQL 15 |
 | Cache | Redis 7 |
 | Authentication | JWT (HMAC-SHA256) |
-| Encryption | WireGuard, Curve25519 |
 | Logging | zerolog (structured) |
 | Metrics | Prometheus, Grafana |
 | Tracing | Custom trace_id propagation via gRPC metadata |
-| Transport | Optional TLS for gRPC |
-| Build | Make, Multi-stage Docker |
+| Transport Security | Optional TLS for gRPC |
+| Resilience | Circuit breaker, exponential backoff, rate limiting |
+| Build | Make, multi-stage Docker |
 | Containers | Docker, Docker Compose |
 
 ## Development Status
 
-### Sprint 1: Foundation ✅
-- Monorepo setup, proto definitions, shared packages
+### Completed ✅
 
-### Sprint 2: Identity Service ✅
-- PostgreSQL storage, JWT authentication, gRPC API, integration tests, Prometheus metrics
+| Sprint | Deliverables |
+|--------|-------------|
+| **Foundation** | Monorepo setup, proto definitions, shared packages |
+| **Identity Service** | PostgreSQL storage, JWT authentication, gRPC API, integration tests, Prometheus metrics |
+| **Discovery Service** | Redis registry, peer matching, heartbeat, authenticated ListPeers, integration tests |
+| **Config Service** | IP allocation, network configuration, SIGHUP hot-reload, config versioning, integration tests |
+| **Agent** | WireGuard tunnel management, Curve25519 key generation, full lifecycle, integration tests |
+| **Observability** | Prometheus metrics, Grafana, distributed tracing, structured logging, health checks, rate limiting |
+| **Resilience** | Circuit breaker, exponential backoff, token refresh loop, graceful shutdown |
+| **P2P Foundation** | libp2p host per agent (PeerID, Noise), AutoNAT, Hole Punching, CI/CD pipeline |
+| **WireGuard ↔ libp2p Bridge** | `/gordion/wg/1.0.0` protocol, per-peer UDP proxy ports, 2-byte length-prefix framing, race-free stream initiation |
+| **Security Hardening** | gRPC TLS support, WireGuard config 0600 permissions + UserConfigDir, ListPeers authentication, `/32` AllowedIPs, data race fixes (sync.RWMutex) |
+| **Exit Node** | `is_exit_node` flag in Discovery, gateway package (Linux iptables / Windows netsh / macOS pf), client-side exit node selection (auto or by ID), `AllowedIPs = 0.0.0.0/0`, DNS leak protection, cleanup on shutdown |
 
-### Sprint 3: Discovery Service ✅
-- Redis registry, peer matching, heartbeat mechanism, gRPC API, integration tests, Prometheus metrics
+### Planned 🔲
 
-### Sprint 4: Config Service ✅
-- IP allocation (DHCP-like), network configuration, gRPC API, integration tests, Prometheus metrics
-
-### Sprint 5: Agent ✅
-- WireGuard tunnel management, Curve25519 key generation, full lifecycle orchestration, end-to-end tests
-
-### Sprint 6: Security & Observability ✅
-- Inter-service authentication, optional TLS, secret management, structured logging, distributed tracing
-
-### Sprint 7: Resilience & Polish ✅
-- gRPC Health Check, Per-IP Rate Limiting, Exponential backoff, Token refresh
-- SIGHUP hot-reload, Config versioning, Graceful shutdown
-
-### Sprint 8: P2P Foundation ✅
-- libp2p host per agent (unique PeerID, Noise encryption)
-- NAT Traversal: AutoNAT + Hole Punching enabled
-- Peer discovery extended: peer_id & p2p_addrs stored in Identity DB and Discovery Redis
-- P2P Handshake (Ping) verified between two local agents (RTT ~0ms loopback)
-- CI/CD pipeline: GitHub Actions (build, integration tests, lint, govulncheck)
-
-### Sprint 9: WireGuard ↔ libp2p Bridge ✅
-- `/gordion/wg/1.0.0` custom libp2p protocol
-- Per-peer UDP proxy ports (no broadcast, each peer has dedicated relay)
-- Length-prefixed framing for UDP-over-stream
-- PeerID-based stream initiator to prevent race conditions
-- Full integration with peerSyncLoop for automatic bridge on new peer discovery
-- WireGuard ListenPort + CIDR address format fixes
+| Feature | Description |
+|---------|-------------|
+| **CLI** | `gordion up/down/status/peers/exit-node` with interactive TUI |
+| **Invite / Join link** | Single URL to onboard a new peer to the network |
+| **Web Dashboard** | Admin UI: peer management, invite links, exit node status |
+| **Kill switch** | Block all internet traffic if the VPN connection drops |
 
 ## Challenges & Solutions
 
-During the development of Gordion VPN, we encountered several architectural and network-level challenges. Documenting these ensures the project evolves as an enterprise-grade solution rather than just a hobby project.
-
 ### 1. The NAT Traversal Problem (Hole Punching)
-**Challenge:** 
-When two agents attempt to establish a P2P WireGuard tunnel, they usually reside behind strictly configured NATs (Network Address Translation) and residential routers. Direct communication drops because their `192.168.x.x` IPs are non-routable over the internet, and modem firewalls block incoming ping requests.
+
+**Challenge:**
+When two agents attempt to establish a P2P WireGuard tunnel, they usually reside behind strictly configured NATs and residential routers. Direct communication drops because their `192.168.x.x` IPs are non-routable over the internet.
 
 **Solution:**
-Instead of relaying all traffic through a slow central proxy, we integrated the **libp2p** networking stack into the Agent:
-- **AutoNAT & STUN:** The agent runs an AutoNAT service on boot to discover its *true* public IP and port from the perspective of the outside world.
-- **Hole Punching:** We utilized `libp2p.EnableHolePunching()` to coordinate simultaneous connection attempts from both peers. By doing a quick P2P Handshake (Ping) *before* configuring the WireGuard tunnel, we punch a hole through the NAT, allowing the WireGuard UDP packets to flow directly (true P2P).
+Instead of relaying all traffic through a central proxy, we integrated the **libp2p** networking stack:
+- **AutoNAT & STUN:** The agent discovers its true public IP and port from the perspective of the outside world.
+- **Hole Punching:** `libp2p.EnableHolePunching()` coordinates simultaneous connection attempts from both peers. By running a libp2p Ping *before* configuring the WireGuard tunnel, we punch a hole through the NAT — WireGuard UDP packets flow directly (true P2P, no relay).
 
-### 2. Centralized vs Decentralized State
-**Challenge:** 
-If the central `Discovery Service` dies, newly joined agents wouldn't know who to connect to, creating a single point of failure.
+### 2. Centralized vs. Decentralized State
 
-**Solution (Hybrid Architecture):** 
-Gordion VPN uses a **Hybrid Control Plane**. Centralized microservices (Identity, Config, Discovery) handle global authentication, policy, and act as "Bootstrap Nodes". Once the initial peer list is acquired, agents communicate directly via libp2p.
+**Challenge:**
+If the central Discovery Service dies, newly joined agents can't find peers — a single point of failure.
+
+**Solution (Hybrid Architecture):**
+Gordion uses a **Hybrid Control Plane**. Centralized microservices handle authentication, IP allocation, and act as bootstrap nodes. Once the initial peer list is acquired, agents communicate *directly* via libp2p. The control plane is only needed for periodic heartbeats and new peer discovery — not for ongoing data transfer.
 
 ### 3. Per-Peer Packet Routing
+
 **Challenge:**
-The initial bridge design broadcast every WireGuard packet to all connected peers. With 10 peers, each packet was sent 10 times — 9 copies wasted.
+An initial bridge design would broadcast every WireGuard packet to all connected peers. With 10 peers, each packet is sent 10 times — 9 copies wasted.
 
 **Solution:**
-Each peer is assigned a dedicated local UDP proxy port. WireGuard’s peer endpoint points to the specific proxy, so packets are routed 1:1 to the correct libp2p stream. No broadcast, no wasted bandwidth.
+Each peer is assigned a **dedicated local UDP proxy port**. WireGuard's peer endpoint points to the specific proxy, so packets are routed 1:1 to the correct libp2p stream. No broadcast, no wasted bandwidth.
+
+### 4. Exit Node Without a Double-Encryption Penalty
+
+**Challenge:**
+Routing through an exit node risks encrypting traffic twice (WireGuard on top of WireGuard) or breaking the NAT bridge.
+
+**Solution:**
+The exit node peer uses the same libp2p bridge as any other peer. The only difference is `AllowedIPs = 0.0.0.0/0` on the client side, and `iptables MASQUERADE` on the exit node side. WireGuard still handles encryption once — no extra overhead.
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) file for details.
+MIT License — see [LICENSE](LICENSE) file for details.
