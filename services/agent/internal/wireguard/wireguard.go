@@ -55,7 +55,14 @@ func NewManager(logger pkglogger.Logger, dryRun bool) *Manager {
 		iface = "gordion"
 	}
 
+	// Prefer a user-owned config dir over the world-readable temp dir
 	configDir := os.TempDir()
+	if dir, err := os.UserConfigDir(); err == nil {
+		gordionDir := filepath.Join(dir, "gordion")
+		if err := os.MkdirAll(gordionDir, 0700); err == nil {
+			configDir = gordionDir
+		}
+	}
 
 	return &Manager{
 		logger:    logger,
@@ -73,7 +80,7 @@ func (m *Manager) Configure(cfg *Config) error {
 		return fmt.Errorf("template parse error: %w", err)
 	}
 
-	f, err := os.Create(configPath)
+	f, err := os.OpenFile(configPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		return fmt.Errorf("config file create error: %w", err)
 	}
