@@ -347,6 +347,30 @@ func (a *Agent) syncPeers(ctx context.Context, networkCIDR string) {
 		return
 	}
 
+	// Determine which peer (if any) is the chosen exit node
+	var exitNodeID string
+	if a.cfg.UseExitNode {
+		for _, p := range peers {
+			if !p.IsExitNode || p.NodeId == a.nodeID {
+				continue
+			}
+			// Specific exit node requested
+			if a.cfg.ExitNodeID != "" && p.NodeId == a.cfg.ExitNodeID {
+				exitNodeID = p.NodeId
+				break
+			}
+			// Auto-select: first available exit node
+			if a.cfg.ExitNodeID == "" && exitNodeID == "" {
+				exitNodeID = p.NodeId
+			}
+		}
+		if exitNodeID == "" {
+			a.logger.Warn("Peer sync: use_exit_node=true but no exit node found in network")
+		} else {
+			a.logger.Infof("Peer sync: using exit node %s", exitNodeID)
+		}
+	}
+
 	// Build the set of currently online peers (excluding self).
 	online := make(map[string]string) // nodeID → publicKey
 	for _, p := range peers {
@@ -397,9 +421,16 @@ func (a *Agent) syncPeers(ctx context.Context, networkCIDR string) {
 		}
 
 		endpoint := fmt.Sprintf("127.0.0.1:%d", proxyPort)
-		allowedIPs := vpnIP + "/32"
-		if vpnIP == "" {
-			allowedIPs = networkCIDR // fallback
+
+		// Exit node gets a default route; regular peers get host-only routes
+		var allowedIPs string
+		if nodeID == exitNodeID {
+			allowedIPs = "0.0.0.0/0, ::/0" // all internet through exit node
+		} else {
+			allowedIPs = vpnIP + "/32"
+			if vpnIP == "" {
+				allowedIPs = networkCIDR // fallback
+			}
 		}
 		if err := a.wg_mgr.AddPeer(wireguard.PeerConfig{
 			PublicKey:  pubKey,
