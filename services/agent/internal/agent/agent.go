@@ -177,7 +177,7 @@ func (a *Agent) Start(ctx context.Context) error {
 		wgCfg.Peers = append(wgCfg.Peers, wireguard.PeerConfig{
 			PublicKey:  peerKey,
 			Endpoint:   endpoint,
-			AllowedIPs: netCfg.NetworkCidr,
+			AllowedIPs: p.IpAddress + "/32", // host-only route, not entire subnet
 		})
 		a.logger.Infof("  Added peer %s @ %s", p.NodeId, endpoint)
 
@@ -357,9 +357,11 @@ func (a *Agent) syncPeers(ctx context.Context, networkCIDR string) {
 		}
 
 		var p2pAddrs []string
+		var vpnIP string
 		for _, p := range peers {
 			if p.NodeId == nodeID {
 				p2pAddrs = p.P2PAddrs
+				vpnIP = p.IpAddress
 				break
 			}
 		}
@@ -382,10 +384,14 @@ func (a *Agent) syncPeers(ctx context.Context, networkCIDR string) {
 		}
 
 		endpoint := fmt.Sprintf("127.0.0.1:%d", proxyPort)
+		allowedIPs := vpnIP + "/32"
+		if vpnIP == "" {
+			allowedIPs = networkCIDR // fallback
+		}
 		if err := a.wg_mgr.AddPeer(wireguard.PeerConfig{
 			PublicKey:  pubKey,
 			Endpoint:   endpoint,
-			AllowedIPs: networkCIDR,
+			AllowedIPs: allowedIPs,
 		}); err != nil {
 			a.logger.Warnf("Peer sync: add peer %s failed: %v", nodeID, err)
 			continue
