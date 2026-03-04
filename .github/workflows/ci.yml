@@ -37,6 +37,9 @@ jobs:
       - name: Build – Agent
         run: cd services/agent && go build ./...
 
+      - name: Build – CLI
+        run: cd cli && go build ./...
+
   # ────────────────────────────────────────────────────────────────
   # Job 2: Integration Tests (needs Postgres + Redis)
   # ────────────────────────────────────────────────────────────────
@@ -171,6 +174,12 @@ jobs:
           version: latest
           working-directory: services/agent
 
+      - name: golangci-lint – CLI
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          working-directory: cli
+
   # ────────────────────────────────────────────────────────────────
   # Job 4: Security – vulnerability scan
   # ────────────────────────────────────────────────────────────────
@@ -201,3 +210,7 @@ jobs:
 
       - name: Scan – Agent
         run: cd services/agent && govulncheck ./...
+
+      - name: Scan – CLI
+        run: cd cli && govulncheck ./...
+

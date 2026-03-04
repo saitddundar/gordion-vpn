@@ -6,6 +6,7 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 
 	discoveryv1 "github.com/saitddundar/gordion-vpn/pkg/proto/discovery/v1"
 )
@@ -38,9 +39,11 @@ func TestDiscoveryService(t *testing.T) {
 		t.Logf("[ok] Peer registered: %s", resp.Message)
 	})
 
-	// Test 2: List Peers
+	// Test 2: List Peers (requires auth token in metadata)
 	t.Run("ListPeers", func(t *testing.T) {
-		resp, err := client.ListPeers(ctx, &discoveryv1.ListPeersRequest{
+		md := metadata.Pairs("authorization", "testtoken123_abc")
+		ctxWithToken := metadata.NewOutgoingContext(ctx, md)
+		resp, err := client.ListPeers(ctxWithToken, &discoveryv1.ListPeersRequest{
 			Limit: 10,
 		})
 		if err != nil {
