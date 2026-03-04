@@ -27,3 +27,4 @@ exit_node_id: ""
 # use_exit_node: true
 # exit_node_id: ""           # empty = auto-select best exit node
 # exit_node_id: "node-abc"   # specific exit node by ID
+# exit_node_dns: "1.1.1.1, 1.0.0.1"  # DNS via tunnel (prevents DNS leaks, default: Cloudflare)

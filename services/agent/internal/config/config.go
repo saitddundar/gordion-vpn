@@ -20,9 +20,11 @@ type Config struct {
 	P2PPort          int    `yaml:"p2p_port"`
 	TLSCACert        string `yaml:"tls_ca_cert"`
 
-	IsExitNode  bool   `yaml:"is_exit_node"`
-	UseExitNode bool   `yaml:"use_exit_node"`
-	ExitNodeID  string `yaml:"exit_node_id"`
+	// Exit node configuration
+	IsExitNode  bool   `yaml:"is_exit_node"`  // this peer routes internet traffic for others
+	UseExitNode bool   `yaml:"use_exit_node"` // route all internet traffic through an exit node
+	ExitNodeID  string `yaml:"exit_node_id"`  // specific exit node to use (empty = auto-select)
+	ExitNodeDNS string `yaml:"exit_node_dns"` // DNS server to use when exit node is active (prevents DNS leaks)
 }
 
 func Load(path string) (*Config, error) {
@@ -71,6 +73,9 @@ func (c *Config) setDefaults() {
 	if c.PeerSyncInterval == 0 {
 		c.PeerSyncInterval = 60
 	}
+	if c.ExitNodeDNS == "" {
+		c.ExitNodeDNS = "1.1.1.1, 1.0.0.1" // Cloudflare — will route through the tunnel
+	}
 }
 
 func (c *Config) overrideFromEnv() {
@@ -104,5 +109,8 @@ func (c *Config) overrideFromEnv() {
 	}
 	if v := os.Getenv("EXIT_NODE_ID"); v != "" {
 		c.ExitNodeID = v
+	}
+	if v := os.Getenv("EXIT_NODE_DNS"); v != "" {
+		c.ExitNodeDNS = v
 	}
 }

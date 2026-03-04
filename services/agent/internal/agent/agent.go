@@ -154,6 +154,12 @@ func (a *Agent) Start(ctx context.Context) error {
 	if len(netCfg.DnsServers) > 0 {
 		dns = strings.Join(netCfg.DnsServers, ", ")
 	}
+	// DNS leak protection: when using an exit node, override DNS so all
+	// queries go through the encrypted tunnel (not the local ISP resolver).
+	if a.cfg.UseExitNode {
+		dns = a.cfg.ExitNodeDNS
+		a.logger.Infof("DNS leak protection active: using %s via VPN tunnel", dns)
+	}
 
 	wgCfg := &wireguard.Config{
 		PrivateKey: keyPair.PrivateKey,
@@ -244,7 +250,6 @@ func (a *Agent) Stop() {
 		}
 	}
 
-	// Clean up exit node NAT/forwarding rules
 	if a.cfg.IsExitNode {
 		if err := a.gateway.Disable(); err != nil {
 			a.logger.Errorf("Gateway disable failed: %v", err)
