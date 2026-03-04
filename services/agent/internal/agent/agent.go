@@ -244,6 +244,13 @@ func (a *Agent) Stop() {
 		}
 	}
 
+	// Clean up exit node NAT/forwarding rules
+	if a.cfg.IsExitNode {
+		if err := a.gateway.Disable(); err != nil {
+			a.logger.Errorf("Gateway disable failed: %v", err)
+		}
+	}
+
 	a.client.Close()
 	a.logger.Info("Agent stopped")
 }
