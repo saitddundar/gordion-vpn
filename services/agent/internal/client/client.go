@@ -7,6 +7,7 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 
 	"github.com/saitddundar/gordion-vpn/pkg/circuitbreaker"
 	configv1 "github.com/saitddundar/gordion-vpn/pkg/proto/config/v1"
@@ -41,7 +42,6 @@ func newCBConfig(name string) circuitbreaker.Config {
 	}
 }
 
-// If caFile is non-empty, TLS is used; otherwise the connection is insecure (dev/test only).
 func New(identityAddr, discoveryAddr, configAddr, caFile string) (*Client, error) {
 	var transportCreds grpc.DialOption
 	if caFile != "" {
@@ -186,7 +186,10 @@ func (c *Client) RegisterPeer(ctx context.Context, token, ip string, port int32,
 	})
 }
 
-func (c *Client) DiscoverPeers(ctx context.Context, limit int32) ([]*discoveryv1.Peer, error) {
+func (c *Client) DiscoverPeers(ctx context.Context, token string, limit int32) ([]*discoveryv1.Peer, error) {
+	// Inject token into outgoing metadata so Discovery can authenticate ListPeers
+	ctx = metadata.AppendToOutgoingContext(ctx, "authorization", token)
+
 	var resp *discoveryv1.ListPeersResponse
 	err := c.cbDiscovery.Execute(func() error {
 		var e error

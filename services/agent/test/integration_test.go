@@ -83,7 +83,7 @@ func TestAgentFlow(t *testing.T) {
 
 	// Step 6: Discover peers
 	t.Run("DiscoverPeers", func(t *testing.T) {
-		peers, err := c.DiscoverPeers(ctx, 10)
+		peers, err := c.DiscoverPeers(ctx, token, 10)
 		if err != nil {
 			t.Fatalf("DiscoverPeers failed: %v", err)
 		}

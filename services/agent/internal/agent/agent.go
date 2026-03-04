@@ -112,7 +112,7 @@ func (a *Agent) Start(ctx context.Context) error {
 	}
 	a.logger.Info("Peer registered")
 
-	peers, err := a.client.DiscoverPeers(ctx, 10)
+	peers, err := a.client.DiscoverPeers(ctx, a.getToken(), 10)
 	if err != nil {
 		a.logger.Warnf("Initial peer discovery failed: %v", err)
 	} else {
@@ -328,7 +328,7 @@ func (a *Agent) peerSyncLoop(ctx context.Context, networkCIDR string) {
 }
 
 func (a *Agent) syncPeers(ctx context.Context, networkCIDR string) {
-	peers, err := a.client.DiscoverPeers(ctx, 50)
+	peers, err := a.client.DiscoverPeers(ctx, a.getToken(), 50)
 	if err != nil {
 		a.logger.Warnf("Peer sync: discovery failed: %v", err)
 		return

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
 	"github.com/saitddundar/gordion-vpn/pkg/auth"
@@ -64,6 +65,14 @@ func (h *DiscoveryHandler) RegisterPeer(ctx context.Context, req *discoveryv1.Re
 }
 
 func (h *DiscoveryHandler) ListPeers(ctx context.Context, req *discoveryv1.ListPeersRequest) (*discoveryv1.ListPeersResponse, error) {
+	token := tokenFromMetadata(ctx)
+	if token == "" {
+		return nil, status.Error(codes.Unauthenticated, "authorization token required")
+	}
+	if _, err := h.resolveNodeID(ctx, token); err != nil {
+		return nil, status.Errorf(codes.Unauthenticated, "auth failed: %v", err)
+	}
+
 	peers, err := h.registry.ListOnlinePeers(ctx)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "list peers failed: %v", err)
@@ -102,6 +111,19 @@ func (h *DiscoveryHandler) ListPeers(ctx context.Context, req *discoveryv1.ListP
 	return &discoveryv1.ListPeersResponse{
 		Peers: protoPeers[:limit],
 	}, nil
+}
+
+// tokenFromMetadata extracts the JWT token from gRPC metadata "authorization" key.
+func tokenFromMetadata(ctx context.Context) string {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return ""
+	}
+	vals := md.Get("authorization")
+	if len(vals) == 0 {
+		return ""
+	}
+	return strings.TrimPrefix(vals[0], "Bearer ")
 }
 
 func (h *DiscoveryHandler) Heartbeat(ctx context.Context, req *discoveryv1.HeartbeatRequest) (*discoveryv1.HeartbeatResponse, error) {
