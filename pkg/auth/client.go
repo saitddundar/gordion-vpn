@@ -29,7 +29,7 @@ func NewClient(identityAddr string, caFile string) (*Client, error) {
 		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	}
 
-	conn, err := grpc.Dial(identityAddr, opts...)
+	conn, err := grpc.NewClient(identityAddr, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to identity service: %w", err)
 	}

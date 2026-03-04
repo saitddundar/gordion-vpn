@@ -13,7 +13,7 @@ func TestAgentFlow(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	c, err := client.New("localhost:8001", "localhost:8002", "localhost:8003")
+	c, err := client.New("localhost:8001", "localhost:8002", "localhost:8003", "")
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}

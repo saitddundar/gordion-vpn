@@ -40,7 +40,7 @@ type Agent struct {
 }
 
 func New(cfg *config.Config, logger pkglogger.Logger) (*Agent, error) {
-	c, err := client.New(cfg.IdentityAddr, cfg.DiscoveryAddr, cfg.ConfigAddr)
+	c, err := client.New(cfg.IdentityAddr, cfg.DiscoveryAddr, cfg.ConfigAddr, cfg.TLSCACert)
 	if err != nil {
 		return nil, err
 	}

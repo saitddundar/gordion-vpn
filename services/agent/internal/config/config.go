@@ -18,6 +18,7 @@ type Config struct {
 	DryRun           *bool  `yaml:"dry_run"`
 	WireGuardPort    int    `yaml:"wireguard_port"`
 	P2PPort          int    `yaml:"p2p_port"`
+	TLSCACert        string `yaml:"tls_ca_cert"` // path to CA cert; empty = insecure
 }
 
 func Load(path string) (*Config, error) {
@@ -87,5 +88,8 @@ func (c *Config) overrideFromEnv() {
 		if port, err := strconv.Atoi(v); err == nil {
 			c.WireGuardPort = port
 		}
+	}
+	if v := os.Getenv("TLS_CA_CERT"); v != "" {
+		c.TLSCACert = v
 	}
 }

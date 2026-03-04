@@ -12,6 +12,7 @@ import (
 	configv1 "github.com/saitddundar/gordion-vpn/pkg/proto/config/v1"
 	discoveryv1 "github.com/saitddundar/gordion-vpn/pkg/proto/discovery/v1"
 	identityv1 "github.com/saitddundar/gordion-vpn/pkg/proto/identity/v1"
+	"github.com/saitddundar/gordion-vpn/pkg/tlsutil"
 	"github.com/saitddundar/gordion-vpn/pkg/tracing"
 )
 
@@ -40,24 +41,36 @@ func newCBConfig(name string) circuitbreaker.Config {
 	}
 }
 
-func New(identityAddr, discoveryAddr, configAddr string) (*Client, error) {
+// If caFile is non-empty, TLS is used; otherwise the connection is insecure (dev/test only).
+func New(identityAddr, discoveryAddr, configAddr, caFile string) (*Client, error) {
+	var transportCreds grpc.DialOption
+	if caFile != "" {
+		creds, err := tlsutil.ClientCredentials(caFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load TLS CA cert: %w", err)
+		}
+		transportCreds = grpc.WithTransportCredentials(creds)
+	} else {
+		transportCreds = grpc.WithTransportCredentials(insecure.NewCredentials())
+	}
+
 	opts := []grpc.DialOption{
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		transportCreds,
 		grpc.WithUnaryInterceptor(tracing.ClientInterceptor()),
 	}
 
-	identityConn, err := grpc.Dial(identityAddr, opts...)
+	identityConn, err := grpc.NewClient(identityAddr, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("identity connection failed: %w", err)
 	}
 
-	discoveryConn, err := grpc.Dial(discoveryAddr, opts...)
+	discoveryConn, err := grpc.NewClient(discoveryAddr, opts...)
 	if err != nil {
 		identityConn.Close()
 		return nil, fmt.Errorf("discovery connection failed: %w", err)
 	}
 
-	configConn, err := grpc.Dial(configAddr, opts...)
+	configConn, err := grpc.NewClient(configAddr, opts...)
 	if err != nil {
 		identityConn.Close()
 		discoveryConn.Close()
