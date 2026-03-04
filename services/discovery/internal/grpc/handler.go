@@ -46,12 +46,13 @@ func (h *DiscoveryHandler) RegisterPeer(ctx context.Context, req *discoveryv1.Re
 	}
 
 	peer := &registry.Peer{
-		NodeID:    nodeID,
-		PublicKey: "",
-		Endpoint:  req.IpAddress + ":" + fmt.Sprint(req.Port),
-		Version:   "1.0.0",
-		PeerID:    req.PeerId,
-		P2PAddrs:  req.P2PAddrs,
+		NodeID:     nodeID,
+		PublicKey:  "",
+		Endpoint:   req.IpAddress + ":" + fmt.Sprint(req.Port),
+		Version:    "1.0.0",
+		PeerID:     req.PeerId,
+		P2PAddrs:   req.P2PAddrs,
+		IsExitNode: req.IsExitNode,
 	}
 
 	if err := h.registry.Register(ctx, peer); err != nil {
@@ -92,13 +93,14 @@ func (h *DiscoveryHandler) ListPeers(ctx context.Context, req *discoveryv1.ListP
 		}
 
 		protoPeers = append(protoPeers, &discoveryv1.Peer{
-			NodeId:    p.NodeID,
-			IpAddress: ipAddress,
-			Port:      port,
-			Region:    p.Version,
-			PeerId:    p.PeerID,
-			P2PAddrs:  p.P2PAddrs,
-			LastSeen:  p.LastSeen,
+			NodeId:     p.NodeID,
+			IpAddress:  ipAddress,
+			Port:       port,
+			Region:     p.Version,
+			PeerId:     p.PeerID,
+			P2PAddrs:   p.P2PAddrs,
+			IsExitNode: p.IsExitNode,
+			LastSeen:   p.LastSeen,
 		})
 	}
 

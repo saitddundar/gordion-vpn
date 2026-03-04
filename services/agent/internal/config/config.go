@@ -18,7 +18,11 @@ type Config struct {
 	DryRun           *bool  `yaml:"dry_run"`
 	WireGuardPort    int    `yaml:"wireguard_port"`
 	P2PPort          int    `yaml:"p2p_port"`
-	TLSCACert        string `yaml:"tls_ca_cert"` // path to CA cert; empty = insecure
+	TLSCACert        string `yaml:"tls_ca_cert"`
+
+	IsExitNode  bool   `yaml:"is_exit_node"`
+	UseExitNode bool   `yaml:"use_exit_node"`
+	ExitNodeID  string `yaml:"exit_node_id"`
 }
 
 func Load(path string) (*Config, error) {
@@ -91,5 +95,14 @@ func (c *Config) overrideFromEnv() {
 	}
 	if v := os.Getenv("TLS_CA_CERT"); v != "" {
 		c.TLSCACert = v
+	}
+	if v := os.Getenv("IS_EXIT_NODE"); v == "true" {
+		c.IsExitNode = true
+	}
+	if v := os.Getenv("USE_EXIT_NODE"); v == "true" {
+		c.UseExitNode = true
+	}
+	if v := os.Getenv("EXIT_NODE_ID"); v != "" {
+		c.ExitNodeID = v
 	}
 }

@@ -26,6 +26,7 @@ message Peer {
   int64 last_seen = 6;      // Last heartbeat timestamp
   string peer_id = 7;       // libp2p PeerID
   repeated string p2p_addrs = 8; // libp2p Multiaddrs
+  bool is_exit_node = 9;    // Whether this peer can route internet traffic
 }
 
 // ListPeers Messages
@@ -47,6 +48,7 @@ message RegisterPeerRequest {
   int64 bandwidth = 5;      // Available bandwidth
   string peer_id = 6;       // libp2p PeerID
   repeated string p2p_addrs = 7; // libp2p Multiaddrs
+  bool is_exit_node = 8;    // Whether this peer is an exit node
 }
 
 message RegisterPeerResponse {
