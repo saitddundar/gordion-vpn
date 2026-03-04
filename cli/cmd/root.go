@@ -8,10 +8,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Global flag: config file path
 var cfgFile string
 
-// Styles — defined once, used across all commands
 var (
 	styleTitle = lipgloss.NewStyle().
 			Bold(true).
@@ -40,10 +38,8 @@ var rootCmd = &cobra.Command{
 	Long: styleTitle.Render("Gordion VPN") + "\n" +
 		styleDim.Render("A self-hosted, peer-to-peer mesh VPN with exit node support.\n") +
 		styleDim.Render("https://github.com/saitddundar/gordion-vpn"),
-	// No Run — show help by default
 }
 
-// Execute is called from main.go
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, styleError.Render("Error: "+err.Error()))
@@ -59,18 +55,15 @@ func init() {
 	)
 }
 
-// Helper: print a success line
 func printOK(msg string) {
 	fmt.Println(styleSuccess.Render("✓") + " " + msg)
 }
 
-// Helper: print an error line and exit
 func printErrorExit(msg string) {
 	fmt.Fprintln(os.Stderr, styleError.Render("✗")+" "+msg)
 	os.Exit(1)
 }
 
-// Helper: print a warning line
 func printWarn(msg string) {
 	fmt.Println(styleWarn.Render("⚠") + " " + msg)
 }
