@@ -9,9 +9,35 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	discoveryv1 "github.com/saitddundar/gordion-vpn/pkg/proto/discovery/v1"
+	identityv1 "github.com/saitddundar/gordion-vpn/pkg/proto/identity/v1"
 )
 
+// getTestToken registers a node with Identity Service and returns a valid JWT.
+func getTestToken(t *testing.T) string {
+	t.Helper()
+
+	conn, err := grpc.Dial("localhost:8001", grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("connect to Identity: %v", err)
+	}
+	defer conn.Close()
+
+	client := identityv1.NewIdentityServiceClient(conn)
+	resp, err := client.RegisterNode(context.Background(), &identityv1.RegisterNodeRequest{
+		PublicKey: "dGVzdHB1YmxpY2tleWZvcmRpc2NvdmVyeXRlc3Q=", // base64 test key
+		Version:   "test",
+		PeerId:    "discovery-test-peer",
+	})
+	if err != nil {
+		t.Fatalf("RegisterNode (for token): %v", err)
+	}
+	return resp.Token
+}
+
 func TestDiscoveryService(t *testing.T) {
+	// Step 0: get a real JWT from Identity Service
+	token := getTestToken(t)
+
 	conn, err := grpc.Dial("localhost:8002", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatalf("Failed to connect: %v", err)
@@ -21,10 +47,10 @@ func TestDiscoveryService(t *testing.T) {
 	client := discoveryv1.NewDiscoveryServiceClient(conn)
 	ctx := context.Background()
 
-	// Test 1: Register Peer
+	// Test 1: Register Peer (token in request body)
 	t.Run("RegisterPeer", func(t *testing.T) {
 		resp, err := client.RegisterPeer(ctx, &discoveryv1.RegisterPeerRequest{
-			Token:     "testtoken123_abc",
+			Token:     token,
 			IpAddress: "192.168.1.100",
 			Port:      51820,
 			Region:    "eu-west",
@@ -39,9 +65,9 @@ func TestDiscoveryService(t *testing.T) {
 		t.Logf("[ok] Peer registered: %s", resp.Message)
 	})
 
-	// Test 2: List Peers (requires auth token in metadata)
+	// Test 2: List Peers (token in gRPC metadata)
 	t.Run("ListPeers", func(t *testing.T) {
-		md := metadata.Pairs("authorization", "testtoken123_abc")
+		md := metadata.Pairs("authorization", token)
 		ctxWithToken := metadata.NewOutgoingContext(ctx, md)
 		resp, err := client.ListPeers(ctxWithToken, &discoveryv1.ListPeersRequest{
 			Limit: 10,
@@ -58,10 +84,10 @@ func TestDiscoveryService(t *testing.T) {
 		}
 	})
 
-	// Test 3: Heartbeat
+	// Test 3: Heartbeat (token in request body)
 	t.Run("Heartbeat", func(t *testing.T) {
 		resp, err := client.Heartbeat(ctx, &discoveryv1.HeartbeatRequest{
-			Token:     "testtoken123_abc",
+			Token:     token,
 			Bandwidth: 500000,
 		})
 		if err != nil {
