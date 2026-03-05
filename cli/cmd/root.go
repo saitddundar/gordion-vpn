@@ -41,6 +41,7 @@ var rootCmd = &cobra.Command{
 }
 
 func Execute() {
+	setupHelp()
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, styleError.Render("Error: "+err.Error()))
 		os.Exit(1)
