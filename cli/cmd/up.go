@@ -16,7 +16,7 @@ import (
 
 var upCmd = &cobra.Command{
 	Use:   "up",
-	Short: "Start the Gordion VPN agent",
+	Short: "Connect to Gordion VPN",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// 1. Check if already running
 		s, err := state.Read()

@@ -12,7 +12,7 @@ import (
 
 var downCmd = &cobra.Command{
 	Use:   "down",
-	Short: "Stop the Gordion VPN agent",
+	Short: "Disconnect from Gordion VPN",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		s, err := state.Read()
 		if err != nil {

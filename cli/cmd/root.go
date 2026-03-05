@@ -49,9 +49,9 @@ func Execute() {
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(
+	rootCmd.PersistentFlags().StringVarP(
 		&cfgFile,
-		"config", "",
+		"config", "c", "",
 		"config file (default: configs/agent.dev.yaml)",
 	)
 }

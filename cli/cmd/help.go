@@ -11,6 +11,13 @@ import (
 const helpWidth = 72
 
 func setupHelp() {
+	// Hide noisy built-in commands before rendering
+	for _, c := range rootCmd.Commands() {
+		if c.Name() == "completion" || c.Name() == "help" {
+			c.Hidden = true
+		}
+	}
+
 	rootCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
 		renderHelp(cmd)
 	})
@@ -50,7 +57,7 @@ func renderHelp(cmd *cobra.Command) {
 		printBox("Commands", func() {
 			maxLen := maxCmdLen(cmd.Commands())
 			for _, sub := range cmd.Commands() {
-				if sub.Hidden {
+				if sub.Hidden || sub.Name() == "completion" || sub.Name() == "help" {
 					continue
 				}
 				name := lipgloss.NewStyle().
@@ -80,11 +87,11 @@ func renderHelp(cmd *cobra.Command) {
 		})
 	}
 
-	// ── Footer ─────────────────────────────────────────────────────────
+	// ── Footer (outside any box) ─────────────────────────────────
 	if cmd.HasAvailableSubCommands() {
 		fmt.Printf("  %s\n",
 			lipgloss.NewStyle().Foreground(lipgloss.Color("#4B5563")).
-				Render(fmt.Sprintf("Run \"%s [command] --help\" for more information.", cmd.CommandPath())),
+				Render(fmt.Sprintf(`Run "%s [command] --help" for more information.`, cmd.CommandPath())),
 		)
 	}
 	fmt.Println()
@@ -129,8 +136,11 @@ func printFlagLines(usage string) {
 		if trimmed == "" {
 			continue
 		}
+		// Skip built-in -h/--help — it's universally known, just noise
+		if strings.Contains(trimmed, "--help") {
+			continue
+		}
 		// cobra formats: "  -f, --flag string   description"
-		// split on 3+ consecutive spaces to separate flag from desc
 		idx := strings.Index(trimmed, "   ")
 		if idx > 0 {
 			flag := strings.TrimSpace(trimmed[:idx])
