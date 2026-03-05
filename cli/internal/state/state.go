@@ -12,6 +12,7 @@ type State struct {
 	PID         int       `json:"pid"`
 	VPNAddr     string    `json:"vpn_addr"` // e.g. "10.8.0.2/24"
 	Token       string    `json:"token"`    // JWT for authenticated gRPC calls
+	LogFile     string    `json:"log_file"` // path to agent log file
 	StartedAt   time.Time `json:"started_at"`
 	ConfigFile  string    `json:"config_file"`
 	IsExitNode  bool      `json:"is_exit_node"`
