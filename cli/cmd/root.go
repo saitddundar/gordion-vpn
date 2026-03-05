@@ -9,6 +9,7 @@ import (
 )
 
 var cfgFile string
+var outputJSON bool // set by --output json
 
 var (
 	styleTitle = lipgloss.NewStyle().
@@ -53,6 +54,11 @@ func init() {
 		&cfgFile,
 		"config", "c", "",
 		"config file (default: configs/agent.dev.yaml)",
+	)
+	rootCmd.PersistentFlags().BoolVarP(
+		&outputJSON,
+		"json", "j", false,
+		"output as JSON (for scripting / dashboards)",
 	)
 }
 
