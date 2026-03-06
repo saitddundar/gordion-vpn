@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -16,6 +17,15 @@ import (
 	"github.com/saitddundar/gordion-vpn/cli/internal/state"
 	discoveryv1 "github.com/saitddundar/gordion-vpn/pkg/proto/discovery/v1"
 )
+
+type PeerJSON struct {
+	NodeID     string `json:"node_id"`
+	IPAddress  string `json:"ip_address"`
+	Region     string `json:"region"`
+	LastSeen   int64  `json:"last_seen"`
+	IsExitNode bool   `json:"is_exit_node"`
+	Online     bool   `json:"online"`
+}
 
 var peersLimit int32
 
@@ -62,13 +72,41 @@ var peersCmd = &cobra.Command{
 		}
 
 		if len(resp.Peers) == 0 {
+			if outputJSON {
+				fmt.Println("[]")
+				return nil
+			}
 			fmt.Printf("\n  %s\n\n", styleDim.Render("No peers found in the network."))
 			return nil
 		}
 
+		if outputJSON {
+			return printPeersJSON(resp.Peers)
+		}
 		printPeers(resp.Peers)
 		return nil
 	},
+}
+
+func printPeersJSON(peers []*discoveryv1.Peer) error {
+	now := time.Now().Unix()
+	out := make([]PeerJSON, 0, len(peers))
+	for _, p := range peers {
+		out = append(out, PeerJSON{
+			NodeID:     p.NodeId,
+			IPAddress:  p.IpAddress,
+			Region:     p.Region,
+			LastSeen:   p.LastSeen,
+			IsExitNode: p.IsExitNode,
+			Online:     (now - p.LastSeen) < 60,
+		})
+	}
+	data, err := json.MarshalIndent(out, "", "  ")
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(data))
+	return nil
 }
 
 func printPeers(peers []*discoveryv1.Peer) {

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -11,6 +12,18 @@ import (
 	"github.com/saitddundar/gordion-vpn/cli/internal/state"
 )
 
+type StatusOutput struct {
+	Connected   bool   `json:"connected"`
+	PID         int    `json:"pid,omitempty"`
+	VPNAddr     string `json:"vpn_addr,omitempty"`
+	UptimeSec   int64  `json:"uptime_sec,omitempty"`
+	IsExitNode  bool   `json:"is_exit_node"`
+	UseExitNode bool   `json:"use_exit_node"`
+	ExitNodeID  string `json:"exit_node_id,omitempty"`
+	LogFile     string `json:"log_file,omitempty"`
+	ConfigFile  string `json:"config_file,omitempty"`
+}
+
 var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show Gordion VPN connection status",
@@ -20,19 +33,50 @@ var statusCmd = &cobra.Command{
 			return fmt.Errorf("read state: %w", err)
 		}
 
-		if s == nil || !s.IsRunning() {
-			printStopped()
-			if s != nil && !s.IsRunning() {
-				// Stale state file — clean it up
-				_ = state.Delete()
-			}
-			return nil
+		running := s != nil && s.IsRunning()
+
+		// Stale state cleanup
+		if s != nil && !running {
+			_ = state.Delete()
+			s = nil
 		}
 
-		printConnected(s)
+		if outputJSON {
+			return printStatusJSON(s, running)
+		}
+
+		if !running {
+			printStopped()
+		} else {
+			printConnected(s)
+		}
 		return nil
 	},
 }
+
+// ─── JSON output ─────────────────────────────────────────────────────────────
+
+func printStatusJSON(s *state.State, running bool) error {
+	out := StatusOutput{Connected: running}
+	if running && s != nil {
+		out.PID = s.PID
+		out.VPNAddr = s.VPNAddr
+		out.UptimeSec = int64(time.Since(s.StartedAt).Seconds())
+		out.IsExitNode = s.IsExitNode
+		out.UseExitNode = s.UseExitNode
+		out.ExitNodeID = s.ExitNodeID
+		out.LogFile = s.LogFile
+		out.ConfigFile = s.ConfigFile
+	}
+	data, err := json.MarshalIndent(out, "", "  ")
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(data))
+	return nil
+}
+
+// ─── Human output ─────────────────────────────────────────────────────────────
 
 func printStopped() {
 	dot := lipgloss.NewStyle().
@@ -83,10 +127,15 @@ func printConnected(s *state.State) {
 	if s.ConfigFile != "" {
 		rows = append(rows, []string{"Config", styleDim.Render(s.ConfigFile)})
 	}
+	if s.LogFile != "" {
+		rows = append(rows, []string{"Logs", styleDim.Render(s.LogFile)})
+	}
 
 	printTable(rows)
 	fmt.Println()
 }
+
+// ─── Shared helpers ───────────────────────────────────────────────────────────
 
 func printTable(rows [][]string) {
 	maxKey := 0
@@ -97,7 +146,7 @@ func printTable(rows [][]string) {
 	}
 
 	keyStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#9CA3AF")). // gray
+		Foreground(lipgloss.Color("#9CA3AF")).
 		Width(maxKey)
 
 	for _, r := range rows {
