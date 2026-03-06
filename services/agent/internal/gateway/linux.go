@@ -5,58 +5,62 @@ package gateway
 import (
 	"fmt"
 	"os/exec"
+	"strings"
 )
 
+func defaultOutboundIface() (string, error) {
+	out, err := exec.Command("ip", "route", "get", "8.8.8.8").Output()
+	if err != nil {
+		return "", fmt.Errorf("ip route get: %w", err)
+	}
+	fields := strings.Fields(string(out))
+	for i, f := range fields {
+		if f == "dev" && i+1 < len(fields) {
+			return fields[i+1], nil
+		}
+	}
+	return "", fmt.Errorf("no dev field in: %s", strings.TrimSpace(string(out)))
+}
+
 func (m *Manager) enableForwarding() error {
-	// Enable kernel IP forwarding
+	iface, err := defaultOutboundIface()
+	if err != nil {
+		return fmt.Errorf("detect outbound iface: %w", err)
+	}
+	m.logger.Infof("Gateway: outbound interface: %s", iface)
+
 	if err := runCmd("sysctl", "-w", "net.ipv4.ip_forward=1"); err != nil {
-		return fmt.Errorf("ip_forward failed: %w", err)
+		return err
 	}
-
-	// Add NAT masquerade rule: packets from WG interface are masqueraded
-	// as coming from this machine's outgoing IP
-	if err := runCmd("iptables", "-t", "nat", "-A", "POSTROUTING",
-		"-o", "eth0", "-j", "MASQUERADE"); err != nil {
-		return fmt.Errorf("iptables MASQUERADE failed: %w", err)
+	if err := runCmd("iptables", "-t", "nat", "-A", "POSTROUTING", "-o", iface, "-j", "MASQUERADE"); err != nil {
+		return err
 	}
-
-	// Allow forwarding from WG interface
-	if err := runCmd("iptables", "-A", "FORWARD",
-		"-i", m.iface, "-j", "ACCEPT"); err != nil {
-		return fmt.Errorf("iptables FORWARD in failed: %w", err)
+	if err := runCmd("iptables", "-A", "FORWARD", "-i", m.iface, "-j", "ACCEPT"); err != nil {
+		return err
 	}
-
-	// Allow return traffic
-	if err := runCmd("iptables", "-A", "FORWARD",
-		"-o", m.iface, "-m", "state", "--state", "RELATED,ESTABLISHED",
-		"-j", "ACCEPT"); err != nil {
-		return fmt.Errorf("iptables FORWARD out failed: %w", err)
+	if err := runCmd("iptables", "-A", "FORWARD", "-o", m.iface, "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT"); err != nil {
+		return err
 	}
-
+	m.outIface = iface
 	return nil
 }
 
 func (m *Manager) disableForwarding() error {
-	// Remove NAT masquerade rule
-	_ = runCmd("iptables", "-t", "nat", "-D", "POSTROUTING",
-		"-o", "eth0", "-j", "MASQUERADE")
-
-	// Remove forwarding rules
+	iface := m.outIface
+	if iface == "" {
+		iface, _ = defaultOutboundIface()
+	}
+	_ = runCmd("iptables", "-t", "nat", "-D", "POSTROUTING", "-o", iface, "-j", "MASQUERADE")
 	_ = runCmd("iptables", "-D", "FORWARD", "-i", m.iface, "-j", "ACCEPT")
-	_ = runCmd("iptables", "-D", "FORWARD",
-		"-o", m.iface, "-m", "state", "--state", "RELATED,ESTABLISHED",
-		"-j", "ACCEPT")
-
-	// Disable IP forwarding
+	_ = runCmd("iptables", "-D", "FORWARD", "-o", m.iface, "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT")
 	_ = runCmd("sysctl", "-w", "net.ipv4.ip_forward=0")
-
 	return nil
 }
 
 func runCmd(name string, args ...string) error {
 	out, err := exec.Command(name, args...).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("%s %v failed: %w\noutput: %s", name, args, err, string(out))
+		return fmt.Errorf("%s: %w\n%s", name, err, out)
 	}
 	return nil
 }

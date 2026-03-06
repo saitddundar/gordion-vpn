@@ -7,15 +7,15 @@ import (
 	pkglogger "github.com/saitddundar/gordion-vpn/pkg/logger"
 )
 
-// Manager handles OS-level routing for exit node functionality.
-// When enabled, this machine forwards internet traffic for VPN peers.
+// handles OS-level routing for exit node functionality.
 type Manager struct {
-	logger  pkglogger.Logger
-	iface   string // WireGuard interface name
-	enabled bool
+	logger   pkglogger.Logger
+	iface    string
+	outIface string // detected at runtime (linux/darwin)
+	enabled  bool
 }
 
-// New creates a new gateway Manager.
+// creates a new gateway Manager.
 func New(logger pkglogger.Logger, wgIface string) *Manager {
 	if wgIface == "" {
 		wgIface = defaultIface()
@@ -26,7 +26,7 @@ func New(logger pkglogger.Logger, wgIface string) *Manager {
 	}
 }
 
-// Enable turns on IP forwarding and NAT so this peer can route traffic.
+// turns on IP forwarding and NAT so this peer can route traffic.
 func (m *Manager) Enable() error {
 	if m.enabled {
 		return nil
@@ -43,7 +43,7 @@ func (m *Manager) Enable() error {
 	return nil
 }
 
-// Disable removes NAT and IP forwarding rules set by Enable.
+// removes NAT and IP forwarding rules set by Enable.
 func (m *Manager) Disable() error {
 	if !m.enabled {
 		return nil
