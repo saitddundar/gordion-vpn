@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -9,11 +8,9 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/metadata"
 
 	"github.com/saitddundar/gordion-vpn/cli/internal/cliconfig"
+	"github.com/saitddundar/gordion-vpn/cli/internal/grpcclient"
 	"github.com/saitddundar/gordion-vpn/cli/internal/state"
 	discoveryv1 "github.com/saitddundar/gordion-vpn/pkg/proto/discovery/v1"
 )
@@ -45,12 +42,11 @@ var peersCmd = &cobra.Command{
 			token = s.Token
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := grpcclient.WithTimeout(cmd.Context(), 5*time.Second)
 		defer cancel()
+		ctx = grpcclient.ContextWithToken(ctx, token)
 
-		conn, err := grpc.NewClient(cfg.DiscoveryAddr,
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
-		)
+		conn, err := grpcclient.Dial(cfg.DiscoveryAddr)
 		if err != nil {
 			return fmt.Errorf("connect to Discovery (%s): %w", cfg.DiscoveryAddr, err)
 		}
@@ -58,15 +54,7 @@ var peersCmd = &cobra.Command{
 
 		client := discoveryv1.NewDiscoveryServiceClient(conn)
 
-		// Attach token if we have one
-		if token != "" {
-			md := metadata.Pairs("authorization", token)
-			ctx = metadata.NewOutgoingContext(ctx, md)
-		}
-
-		resp, err := client.ListPeers(ctx, &discoveryv1.ListPeersRequest{
-			Limit: peersLimit,
-		})
+		resp, err := client.ListPeers(ctx, &discoveryv1.ListPeersRequest{Limit: peersLimit})
 		if err != nil {
 			return fmt.Errorf("ListPeers: %w\n  (Is the agent running and connected?)", err)
 		}

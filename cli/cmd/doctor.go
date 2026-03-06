@@ -7,14 +7,15 @@ import (
 	"net"
 	"os/exec"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/saitddundar/gordion-vpn/cli/internal/cliconfig"
+	"github.com/saitddundar/gordion-vpn/cli/internal/grpcclient"
 	"github.com/saitddundar/gordion-vpn/cli/internal/state"
 	configv1 "github.com/saitddundar/gordion-vpn/pkg/proto/config/v1"
 	discoveryv1 "github.com/saitddundar/gordion-vpn/pkg/proto/discovery/v1"
@@ -36,7 +37,7 @@ var doctorCmd = &cobra.Command{
 			return fmt.Errorf("load config: %w", err)
 		}
 
-		results := runChecks(cfg)
+		results := runChecks(cmd.Context(), cfg)
 
 		if outputJSON {
 			return json.NewEncoder(cmd.OutOrStdout()).Encode(results)
@@ -47,10 +48,9 @@ var doctorCmd = &cobra.Command{
 	},
 }
 
-func runChecks(cfg *cliconfig.Config) []CheckResult {
+func runChecks(ctx context.Context, cfg *cliconfig.Config) []CheckResult {
 	var checks []CheckResult
 
-	// 1. Agent running
 	s, _ := state.Read()
 	if s != nil && s.IsRunning() {
 		checks = append(checks, CheckResult{"Agent process", true, fmt.Sprintf("Running (PID %d)", s.PID)})
@@ -58,58 +58,42 @@ func runChecks(cfg *cliconfig.Config) []CheckResult {
 		checks = append(checks, CheckResult{"Agent process", false, "Not running — start with `gordion up`"})
 	}
 
-	// 2. Identity Service reachable
-	checks = append(checks, grpcCheck("Identity Service", cfg.IdentityAddr, func(conn *grpc.ClientConn) error {
+	checks = append(checks, grpcCheck(ctx, "Identity Service", cfg.IdentityAddr, func(conn *grpc.ClientConn) error {
 		cl := identityv1.NewIdentityServiceClient(conn)
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		c, cancel := grpcclient.WithTimeout(ctx, 3*time.Second)
 		defer cancel()
-		_, err := cl.ValidateToken(ctx, &identityv1.ValidateTokenRequest{Token: "probe"})
-		// Any response (even Unauthenticated) means the service is up
-		if err != nil {
-			st, _ := err.(interface {
-				GRPCStatus() interface{ Code() uint32 }
-			})
-			_ = st
-			// grpc status Unauthenticated = service is alive
-			if isGRPCAlive(err) {
-				return nil
-			}
+		_, err := cl.ValidateToken(c, &identityv1.ValidateTokenRequest{Token: "probe"})
+		if isGRPCAlive(err) {
+			return nil
 		}
 		return err
 	}))
 
-	// 3. Discovery Service reachable
-	checks = append(checks, grpcCheck("Discovery Service", cfg.DiscoveryAddr, func(conn *grpc.ClientConn) error {
+	checks = append(checks, grpcCheck(ctx, "Discovery Service", cfg.DiscoveryAddr, func(conn *grpc.ClientConn) error {
 		cl := discoveryv1.NewDiscoveryServiceClient(conn)
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		c, cancel := grpcclient.WithTimeout(ctx, 3*time.Second)
 		defer cancel()
-		_, err := cl.ListPeers(ctx, &discoveryv1.ListPeersRequest{Limit: 1})
+		_, err := cl.ListPeers(c, &discoveryv1.ListPeersRequest{Limit: 1})
 		if isGRPCAlive(err) {
 			return nil
 		}
 		return err
 	}))
 
-	// 4. Config Service reachable
-	checks = append(checks, grpcCheck("Config Service", cfg.ConfigAddr, func(conn *grpc.ClientConn) error {
+	checks = append(checks, grpcCheck(ctx, "Config Service", cfg.ConfigAddr, func(conn *grpc.ClientConn) error {
 		cl := configv1.NewConfigServiceClient(conn)
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		c, cancel := grpcclient.WithTimeout(ctx, 3*time.Second)
 		defer cancel()
-		_, err := cl.GetConfig(ctx, &configv1.GetConfigRequest{Token: "probe"})
+		_, err := cl.GetConfig(c, &configv1.GetConfigRequest{Token: "probe"})
 		if isGRPCAlive(err) {
 			return nil
 		}
 		return err
 	}))
 
-	// 5. WireGuard port available
 	wpPort := fmt.Sprintf(":%d", cfg.WireGuardPort)
 	if s != nil && s.IsRunning() {
-		checks = append(checks, CheckResult{
-			"WireGuard port",
-			true,
-			fmt.Sprintf("Port %d in use by agent (expected)", cfg.WireGuardPort),
-		})
+		checks = append(checks, CheckResult{"WireGuard port", true, fmt.Sprintf("Port %d in use by agent (expected)", cfg.WireGuardPort)})
 	} else {
 		ln, err := net.ListenPacket("udp", wpPort)
 		if err != nil {
@@ -120,7 +104,6 @@ func runChecks(cfg *cliconfig.Config) []CheckResult {
 		}
 	}
 
-	// 6. P2P port available
 	p2pPort := fmt.Sprintf(":%d", cfg.P2PPort)
 	ln, err := net.Listen("tcp", p2pPort)
 	if err != nil && s == nil {
@@ -132,13 +115,12 @@ func runChecks(cfg *cliconfig.Config) []CheckResult {
 		checks = append(checks, CheckResult{"P2P port", true, fmt.Sprintf("Port %d OK", cfg.P2PPort)})
 	}
 
-	// 7. WireGuard binary present (if not dry-run)
 	wgBin := "wg"
 	if runtime.GOOS == "windows" {
 		wgBin = "wg.exe"
 	}
 	if _, err := exec.LookPath(wgBin); err != nil {
-		checks = append(checks, CheckResult{"WireGuard binary", false, "Not found in PATH (required for real tunnel)"})
+		checks = append(checks, CheckResult{"WireGuard binary", false, "Not found in PATH"})
 	} else {
 		checks = append(checks, CheckResult{"WireGuard binary", true, "Found in PATH"})
 	}
@@ -146,13 +128,12 @@ func runChecks(cfg *cliconfig.Config) []CheckResult {
 	return checks
 }
 
-func grpcCheck(name, addr string, fn func(conn *grpc.ClientConn) error) CheckResult {
-	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+func grpcCheck(ctx context.Context, name, addr string, fn func(conn *grpc.ClientConn) error) CheckResult {
+	conn, err := grpcclient.Dial(addr)
 	if err != nil {
 		return CheckResult{name, false, fmt.Sprintf("cannot connect to %s: %v", addr, err)}
 	}
 	defer conn.Close()
-
 	if err := fn(conn); err != nil {
 		return CheckResult{name, false, fmt.Sprintf("unreachable (%s): %v", addr, err)}
 	}
@@ -163,14 +144,9 @@ func isGRPCAlive(err error) bool {
 	if err == nil {
 		return true
 	}
-	s := err.Error()
 	for _, code := range []string{"Unauthenticated", "InvalidArgument", "PermissionDenied", "NotFound"} {
-		if len(s) >= len(code) {
-			for i := 0; i <= len(s)-len(code); i++ {
-				if s[i:i+len(code)] == code {
-					return true
-				}
-			}
+		if strings.Contains(err.Error(), code) {
+			return true
 		}
 	}
 	return false
