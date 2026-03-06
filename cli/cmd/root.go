@@ -43,8 +43,10 @@ var rootCmd = &cobra.Command{
 
 func Execute() {
 	setupHelp()
+	rootCmd.SilenceErrors = true
+	rootCmd.SilenceUsage = true
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, styleError.Render("Error: "+err.Error()))
+		fmt.Fprintln(os.Stderr, styleError.Render("✗")+" "+err.Error())
 		os.Exit(1)
 	}
 }

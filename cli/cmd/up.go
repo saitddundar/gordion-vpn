@@ -28,13 +28,13 @@ var upCmd = &cobra.Command{
 		// 2. Load config
 		cfg, err := cliconfig.Load(cfgFile)
 		if err != nil {
-			printErrorExit(err.Error())
+			return fmt.Errorf("load config: %w", err)
 		}
 
 		// 3. Find agent binary
 		agentBin, err := findAgentBinary()
 		if err != nil {
-			printErrorExit(err.Error())
+			return err
 		}
 
 		// 4. Build args

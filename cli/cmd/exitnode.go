@@ -38,7 +38,7 @@ var exitNodeListCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := cliconfig.Load(cfgFile)
 		if err != nil {
-			printErrorExit(err.Error())
+			return fmt.Errorf("load config: %w", err)
 		}
 
 		s, _ := state.Read()
@@ -103,7 +103,7 @@ var exitNodeSetCmd = &cobra.Command{
 			return fmt.Errorf("read state: %w", err)
 		}
 		if s == nil || !s.IsRunning() {
-			printErrorExit("Gordion is not running. Start it first with `gordion up`.")
+			return fmt.Errorf("Gordion is not running — start it first with `gordion up`")
 		}
 
 		targetID := ""
@@ -140,7 +140,7 @@ var exitNodeOffCmd = &cobra.Command{
 			return fmt.Errorf("read state: %w", err)
 		}
 		if s == nil || !s.IsRunning() {
-			printErrorExit("Gordion is not running.")
+			return fmt.Errorf("Gordion is not running — start it first with `gordion up`")
 		}
 
 		s.UseExitNode = false

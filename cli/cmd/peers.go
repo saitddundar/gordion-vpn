@@ -35,7 +35,7 @@ var peersCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := cliconfig.Load(cfgFile)
 		if err != nil {
-			printErrorExit(err.Error())
+			return fmt.Errorf("load config: %w", err)
 		}
 
 		// Get token from state file (agent sets it; if not available we try without)
