@@ -77,7 +77,6 @@ var initCmd = &cobra.Command{
 	},
 }
 
-// generateWireGuardKeys generates a Curve25519 private+public keypair (WireGuard format).
 func generateWireGuardKeys() (privB64, pubB64 string, err error) {
 	var priv [32]byte
 	if _, err = rand.Read(priv[:]); err != nil {
@@ -97,7 +96,6 @@ func generateWireGuardKeys() (privB64, pubB64 string, err error) {
 	return
 }
 
-// buildDefaultConfig returns a ready-to-use agent YAML config string.
 func buildDefaultConfig(privKey, pubKey string) string {
 	lines := []string{
 		"# Gordion VPN — Agent Configuration",

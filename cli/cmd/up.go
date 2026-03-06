@@ -43,38 +43,66 @@ var upCmd = &cobra.Command{
 			agentArgs = append(agentArgs, "--config", cfgFile)
 		}
 
-		// 5. Start agent in background
-		fmt.Printf("%s Starting Gordion VPN agent...\n", styleDim.Render("→"))
+		// 5. Open log file (stdout + stderr from agent go here)
+		logPath := state.DefaultLogPath()
+		if err := os.MkdirAll(filepath.Dir(logPath), 0700); err != nil {
+			return fmt.Errorf("create log dir: %w", err)
+		}
+		logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+		if err != nil {
+			printWarn("Could not open log file, agent will run without logs: " + err.Error())
+			logPath = ""
+		}
+
+		// 6. Start agent in background
+		fmt.Printf("%s Starting Gordion VPN...\n", styleDim.Render("→"))
 
 		agentCmd := exec.Command(agentBin, agentArgs...)
-		agentCmd.Stdout = nil // detached
-		agentCmd.Stderr = nil
+		if logFile != nil {
+			agentCmd.Stdout = logFile
+			agentCmd.Stderr = logFile
+		}
 		agentCmd.Stdin = nil
 
 		// Detach from current process group so it survives terminal close
 		setSysProcAttr(agentCmd)
 
 		if err := agentCmd.Start(); err != nil {
+			if logFile != nil {
+				logFile.Close()
+			}
 			return fmt.Errorf("failed to start agent: %w\n  binary: %s", err, agentBin)
+		}
+
+		// Close our handle to the log file — agent holds its own
+		if logFile != nil {
+			logFile.Close()
 		}
 
 		pid := agentCmd.Process.Pid
 
-		// 6. Write state file
+		// 7. Write state file
 		s = &state.State{
 			PID:         pid,
 			StartedAt:   time.Now(),
+			LogFile:     logPath,
 			ConfigFile:  resolvedConfigPath(cfgFile),
 			IsExitNode:  cfg.IsExitNode,
 			UseExitNode: cfg.UseExitNode,
 			ExitNodeID:  cfg.ExitNodeID,
 		}
 		if err := state.Write(s); err != nil {
-			// Non-fatal — agent is running, just warn
 			printWarn("Could not write state file: " + err.Error())
 		}
 
-		printOK(fmt.Sprintf("Agent started (PID %d)", pid))
+		printOK(fmt.Sprintf("Gordion VPN started (PID %d)", pid))
+
+		if logPath != "" {
+			fmt.Printf("  %s %s\n",
+				styleDim.Render("logs →"),
+				styleDim.Render(logPath),
+			)
+		}
 
 		if cfg.IsExitNode {
 			printOK("This node is an " + styleBold.Render("exit node"))
@@ -100,12 +128,10 @@ func findAgentBinary() (string, error) {
 		name = "gordion-agent.exe"
 	}
 
-	// Try PATH first
 	if p, err := exec.LookPath(name); err == nil {
 		return p, nil
 	}
 
-	// Try next to the CLI binary itself
 	exe, err := os.Executable()
 	if err == nil {
 		sibling := filepath.Join(filepath.Dir(exe), name)

@@ -14,7 +14,6 @@ import (
 	"github.com/saitddundar/gordion-vpn/cli/internal/state"
 )
 
-// DefaultLogPath returns the expected log file location for the gordion agent.
 func DefaultLogPath() string {
 	return filepath.Join(os.TempDir(), "gordion", "agent.log")
 }
@@ -26,7 +25,7 @@ var logsCmd = &cobra.Command{
 	Use:   "logs",
 	Short: "View Gordion VPN logs",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		logPath := DefaultLogPath()
+		logPath := state.DefaultLogPath()
 
 		// If agent wrote a custom log path into state, prefer that
 		s, _ := state.Read()
@@ -54,9 +53,7 @@ var logsCmd = &cobra.Command{
 	},
 }
 
-// printLast prints the last N lines of the log file.
 func printLast(f *os.File, n int) error {
-	// Read all lines, keep last n
 	var lines []string
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
@@ -84,14 +81,12 @@ func printLast(f *os.File, n int) error {
 	return nil
 }
 
-// tailFollow blocks and streams new log lines as they are written (like tail -f).
 func tailFollow(f *os.File) error {
 	fmt.Printf("  %s  %s\n\n",
 		lipgloss.NewStyle().Foreground(lipgloss.Color("#10B981")).Render("●"),
 		styleDim.Render("Streaming logs... (Ctrl+C to stop)"),
 	)
 
-	// Seek to end, then poll for new content
 	f.Seek(0, io.SeekEnd)
 	reader := bufio.NewReader(f)
 
@@ -108,7 +103,6 @@ func tailFollow(f *os.File) error {
 	}
 }
 
-// formatLogLine applies color based on log level keywords.
 func formatLogLine(line string) string {
 	switch {
 	case containsAny(line, "ERROR", "error", "ERR"):

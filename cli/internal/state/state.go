@@ -21,10 +21,12 @@ type State struct {
 }
 
 func Path() string {
-	// On Linux: /run/user/<uid>/gordion/state.json
-	// On others: os.TempDir()/gordion/state.json
 	dir := filepath.Join(os.TempDir(), "gordion")
 	return filepath.Join(dir, "state.json")
+}
+
+func DefaultLogPath() string {
+	return filepath.Join(os.TempDir(), "gordion", "agent.log")
 }
 
 func Write(s *State) error {
