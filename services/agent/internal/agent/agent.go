@@ -110,6 +110,9 @@ func (a *Agent) Start(ctx context.Context) error {
 	a.vpnIP = ip
 	a.logger.Infof("VPN IP: %s, Subnet: %s, Gateway: %s", ip, subnet, gw)
 
+	// Update the CLI state file so `gordion status` shows the real VPN address and token.
+	a.updateCLIState(ip, token)
+
 	a.logger.Info("Announcing to Discovery Service...")
 	if err := a.client.RegisterPeer(ctx, a.token, a.vpnIP,
 		int32(a.cfg.WireGuardPort), a.p2p_mgr.PeerID(),
