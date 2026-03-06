@@ -1,8 +1,10 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
@@ -45,7 +47,12 @@ func Execute() {
 	setupHelp()
 	rootCmd.SilenceErrors = true
 	rootCmd.SilenceUsage = true
-	if err := rootCmd.Execute(); err != nil {
+
+	// Signal-aware context: Ctrl+C cancels in-flight gRPC calls gracefully
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	if err := rootCmd.ExecuteContext(ctx); err != nil {
 		fmt.Fprintln(os.Stderr, styleError.Render("✗")+" "+err.Error())
 		os.Exit(1)
 	}
