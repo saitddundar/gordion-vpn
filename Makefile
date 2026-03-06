@@ -1,12 +1,12 @@
-.PHONY: build-all build-identity build-discovery build-config build-agent \
+.PHONY: build-all build-identity build-discovery build-config build-agent build-cli \
        test-all test-identity test-discovery test-config test-agent \
        docker-up docker-down docker-restart docker-build \
-       tidy-all proto clean vulncheck help
+       tidy-all proto clean vulncheck install-cli help
 
 # === BUILD ===
 
-build-all: build-identity build-discovery build-config build-agent
-	@echo "All services built successfully"
+build-all: build-identity build-discovery build-config build-agent build-cli
+	@echo "All services and CLI built successfully"
 
 build-identity:
 	@echo "Building Identity Service..."
@@ -23,6 +23,15 @@ build-config:
 build-agent:
 	@echo "Building Agent..."
 	cd services/agent && go build -o agent.exe ./cmd/agent
+
+build-cli:
+	@echo "Building CLI (gordion)..."
+	cd cli && go build -ldflags="-X github.com/saitddundar/gordion-vpn/cli/cmd.Version=$(shell git describe --tags --always --dirty 2>nul || echo dev)" -o gordion.exe .
+
+install-cli:
+	@echo "Installing gordion CLI to GOPATH/bin..."
+	cd cli && go install -ldflags="-X github.com/saitddundar/gordion-vpn/cli/cmd.Version=$(shell git describe --tags --always --dirty 2>nul || echo dev)" .
+	@echo "Run: gordion --help"
 
 # === TEST ===
 
@@ -65,10 +74,12 @@ docker-build:
 
 tidy-all:
 	@echo "Tidying all modules..."
-	cd services/identity && go mod tidy
+	cd services/identity  && go mod tidy
 	cd services/discovery && go mod tidy
-	cd services/config && go mod tidy
-	cd services/agent && go mod tidy
+	cd services/config    && go mod tidy
+	cd services/agent     && go mod tidy
+	cd cli                && go mod tidy
+	go work sync
 
 # === PROTO ===
 
@@ -88,11 +99,12 @@ clean:
 # === SECURITY ===
 
 vulncheck:
-	@echo "Running vulnerability check on all services..."
-	cd services/identity && govulncheck ./...
+	@echo "Running vulnerability check on all modules..."
+	cd services/identity  && govulncheck ./...
 	cd services/discovery && govulncheck ./...
-	cd services/config && govulncheck ./...
-	cd services/agent && govulncheck ./...
+	cd services/config    && govulncheck ./...
+	cd services/agent     && govulncheck ./...
+	cd cli                && govulncheck ./...
 
 # === HELP ===
 
@@ -102,11 +114,13 @@ help:
 	@echo   ================================
 	@echo.
 	@echo   Build:
-	@echo     make build-all         Build all services
+	@echo     make build-all         Build all services + CLI
 	@echo     make build-identity    Build identity service
 	@echo     make build-discovery   Build discovery service
 	@echo     make build-config      Build config service
 	@echo     make build-agent       Build agent
+	@echo     make build-cli         Build CLI (gordion.exe)
+	@echo     make install-cli       Install gordion to GOPATH/bin
 	@echo.
 	@echo   Test:
 	@echo     make test-all          Run all tests
@@ -124,7 +138,7 @@ help:
 	@echo   Other:
 	@echo     make tidy-all          Run go mod tidy on all modules
 	@echo     make proto             Generate protobuf code
-	@echo     make vulncheck         Scan dependencies for CVEs
+	@echo     make vulncheck         Scan all modules for CVEs
 	@echo     make clean             Remove build artifacts
 	@echo     make help              Show this help
 	@echo.

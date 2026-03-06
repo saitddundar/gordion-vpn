@@ -237,6 +237,93 @@ When multiple peers are available, the agent prioritizes by:
 | 3 | **Region match** | Reduce geographic latency |
 | 4 | **Last Heartbeat** | Prefer recently active nodes |
 
+## CLI — `gordion`
+
+The `gordion` CLI is the primary interface for managing the VPN on end nodes. It starts/stops the agent, shows status, lists peers, and runs diagnostics — all from a single binary.
+
+### Installation
+
+```bash
+# Build and install to GOPATH/bin
+make install-cli
+
+# Or build locally
+make build-cli          # produces cli/gordion.exe
+```
+
+### First-Time Setup
+
+```bash
+# Generate a WireGuard keypair and default config (run once per node)
+gordion init
+
+# Edit the generated config to point at your control plane servers
+nano configs/agent.yaml
+
+# Start the VPN
+gordion up
+```
+
+### Command Reference
+
+| Command | Description |
+|---------|-------------|
+| `gordion up` | Start the VPN agent in the background |
+| `gordion down` | Stop the agent (graceful, 10s timeout) |
+| `gordion restart` | Restart the agent (down + up) |
+| `gordion status` | Show connection status, VPN IP, uptime |
+| `gordion peers` | List all peers in the network |
+| `gordion exit-node list` | Show available exit nodes |
+| `gordion exit-node set [id]` | Route internet traffic via an exit node |
+| `gordion exit-node off` | Disable exit node routing |
+| `gordion logs [-f] [-n N]` | View or stream agent logs |
+| `gordion doctor` | Run connectivity diagnostics (7 checks) |
+| `gordion init [--force]` | Generate keypair + default config |
+| `gordion version` | Print version, OS, arch, Go runtime |
+
+**Global flags:**
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--config` | `-c` | Config file path (default: `configs/agent.dev.yaml`) |
+| `--json` | `-j` | Output as JSON for scripting / dashboards |
+
+### Examples
+
+```bash
+# Connect with a specific config
+gordion up -c /etc/gordion/agent.yaml
+
+# Check status as JSON (for scripts/dashboards)
+gordion status -j
+# → {"connected":true,"vpn_addr":"10.8.0.5/24","uptime_sec":3714,...}
+
+# List peers as JSON
+gordion peers -j
+
+# Stream logs in real time
+gordion logs -f
+
+# Check all services are reachable
+gordion doctor
+# →  ✓  Agent process          Running (PID 12345)
+# →  ✓  Identity Service       OK (localhost:8001)
+# →  ✗  Discovery Service      unreachable (localhost:8002): ...
+
+# Set an exit node
+gordion exit-node set node-abc123
+
+# Version with full build info
+gordion version -j
+# → {"version":"v0.2.0","os":"linux","arch":"amd64","go_version":"go1.22.0"}
+```
+
+### Security Note
+
+`gordion init` stores the WireGuard **private key** in `~/.gordion/keys/private.key` with `0600` permissions. The key is **never** written into the config file — only the file path is referenced. Do not commit `~/.gordion/keys/` to version control.
+
+---
+
 ## Getting Started
 
 ### Prerequisites
@@ -475,10 +562,13 @@ Each request gets a unique `request_id`. Combined with `trace_id`:
 make help              # Show all available commands
 
 # Build
-make build-all         # Build all services
+make build-all         # Build all services + CLI
 make build-identity    # Build identity service
 make build-discovery   # Build discovery service
 make build-config      # Build config service
+make build-agent       # Build agent binary
+make build-cli         # Build gordion CLI (gordion.exe)
+make install-cli       # Install gordion to GOPATH/bin
 
 # Test
 make test-all          # Run all integration tests
@@ -492,8 +582,9 @@ make docker-down       # Stop infrastructure
 make docker-restart    # Restart infrastructure
 
 # Utilities
-make tidy-all          # Run go mod tidy on all modules
+make tidy-all          # Run go mod tidy on all modules (including CLI)
 make proto             # Generate protobuf code
+make vulncheck         # Scan all modules for CVEs
 make clean             # Remove build artifacts
 ```
 
