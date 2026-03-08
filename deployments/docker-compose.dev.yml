@@ -83,6 +83,12 @@ services:
     ports:
       - "8001:8001"
       - "9090:9090"
+    environment:
+      - DATABASE_URL=postgresql://gordion:${POSTGRES_PASSWORD:-dev_password_123}@postgres:5432/gordion?sslmode=disable
+      - JWT_SECRET=${JWT_SECRET:-dev_secret_key_123}
+      - LOG_LEVEL=${LOG_LEVEL:-debug}
+    env_file:
+      - ../.env
     depends_on:
       postgres:
         condition: service_healthy
@@ -99,6 +105,11 @@ services:
     ports:
       - "8002:8002"
       - "9093:9091"
+    environment:
+      - REDIS_URL=redis:6379
+      - LOG_LEVEL=${LOG_LEVEL:-debug}
+    env_file:
+      - ../.env
     depends_on:
       redis:
         condition: service_healthy
@@ -115,6 +126,11 @@ services:
     ports:
       - "8003:8003"
       - "9094:9092"
+    environment:
+      - REDIS_URL=redis:6379
+      - LOG_LEVEL=${LOG_LEVEL:-debug}
+    env_file:
+      - ../.env
     depends_on:
       redis:
         condition: service_healthy
