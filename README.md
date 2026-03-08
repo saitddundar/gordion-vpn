@@ -51,71 +51,50 @@ Gordion VPN turns participating nodes into both clients and relay peers. It uses
 - **Resilience** — circuit breakers, exponential backoff, rate limiting, graceful shutdown, SIGHUP config hot-reload
 
 ## Architecture
-```mermaid
-flowchart TB
-    %% Colors and Styling
-    classDef controlPlane fill:#f8fafc,stroke:#94a3b8,stroke-width:2px,color:#0f172a
-    classDef dataPlane fill:#f0fdf4,stroke:#4ade80,stroke-width:2px,color:#14532d
-    classDef service fill:#eff6ff,stroke:#3b82f6,stroke-width:2px,color:#1e3a8a
-    classDef db fill:#e2e8f0,stroke:#64748b,stroke-width:1px,color:#0f172a
-    classDef obs fill:#f3e8ff,stroke:#a855f7,stroke-width:1px,color:#4c1d95
-    classDef agent fill:#dcfce7,stroke:#22c55e,stroke-width:2px,color:#14532d
-    classDef internet fill:#ffe4e6,stroke:#f43f5e,stroke-width:2px,color:#881337
-    classDef middleware fill:#fef3c7,stroke:#f59e0b,stroke-width:1px,color:#78350f
+```text
+┌───────────────────────────────────────────────────────────────────────────────┐
+│                                                                               │
+│                             CONTROL PLANE (Microservices)                     │
+│                                                                               │
+│  ┌─────────────────────┐   ┌─────────────────────┐   ┌─────────────────────┐  │
+│  │   Identity Service  │   │  Discovery Service  │   │   Config Service    │  │
+│  │---------------------│   │---------------------│   │---------------------│  │
+│  │ • Node PKI          │   │ • Peer Registry     │   │ • IP Allocator      │  │
+│  │ • JWT Generation    │   │ • Heartbeat         │   │ • Network CIDR      │  │
+│  │                     │   │                     │   │                     │  │
+│  │   [( PostgreSQL )]  │   │     [( Redis )]     │   │     [( Redis )]     │  │
+│  └──────────┬──────────┘   └──────────┬──────────┘   └──────────┬──────────┘  │
+│             │                         │                         │             │
+│  ┌──────────▼─────────────────────────▼─────────────────────────▼──────────┐  │
+│  │                      Security, Middleware & Resilience                  │  │
+│  │    [ JWT Validation ]      [ Circuit Breakers ]     [ Rate Limiting ]   │  │
+│  └────────────────────────────────────┬────────────────────────────────────┘  │
+│                                       │                                       │
+└───────────────────────────────────────┼───────────────────────────────────────┘
+                                        │
+                       gRPC + TLS (Bootstrap & Heartbeat)
+                                        │
+┌───────────────────────────────────────▼───────────────────────────────────────┐
+│                                                                               │
+│  ┌──────────────────┐       libp2p Stream Tunnel      ┌──────────────────┐    │
+│  │    Agent A       │◄═══════════════════════════════►│    Agent B(VPS)  │    │
+│  │  (Client Node)   │       WireGuard Encryption      │   [Exit Node]    │    │
+│  │  VPN IP: .../32  │      AutoNAT & Hole Punched     │   VPN IP: .../32 │    │
+│  └──────────────────┘                                 └─────────┬────────┘    │
+│                                                                 │             │
+│                          DATA PLANE (Zero-Trust P2P Mesh)       │             │
+└─────────────────────────────────────────────────────────────────┼─────────────┘
+                                                                  │
+                                                        iptables MASQUERADE & 
+                                                           DNS Resolution     
+                                                                  │
+                                                                  ▼
+                                                       (( Public Internet ))
 
-    subgraph ControlPlane ["☁️ CONTROL PLANE (Microservices Architecture)"]
-        direction TB
-        
-        subgraph CoreServices ["Core Services"]
-            direction LR
-            ID[" Identity Service<br/>Node PKI & JWT Auth"]:::service
-            DISC[" Discovery Service<br/>Peer Registry & Heartbeat"]:::service
-            CONF[" Config Service<br/>IP Allocator & DNS/CIDR"]:::service
-            
-            DB_PG[("PostgreSQL")]:::db
-            DB_RD1[("Redis")]:::db
-            DB_RD2[("Redis")]:::db
-            
-            ID --- DB_PG
-            DISC --- DB_RD1
-            CONF --- DB_RD2
-        end
-        
-        subgraph Gateways [" Security, Middleware & Resilience"]
-            direction LR
-            JWT["JWT Validation"]:::middleware
-            RL["Rate Limiter (100req/m)"]:::middleware
-            CB["Circuit Breakers"]:::middleware
-        end
-        
-        CoreServices --- Gateways
-    end
-
-    subgraph Observability ["OBSERVABILITY & TELEMETRY STACK"]
-        direction LR
-        PROM[" Prometheus + Grafana"]:::obs
-        TRAC[" Distributed Tracing (x-trace-id)"]:::obs
-        LOG[" Structured Logging (Zerolog)"]:::obs
-    end
-
-    subgraph DataPlane [" DATA PLANE (Zero-Trust P2P Mesh)"]
-        direction LR
-        AgentA[" Agent A<br/>(Client Device)<br/>VPN IP: /32"]:::agent
-        AgentB[" Agent B<br/>(Peer Node)<br/>VPN IP: /32"]:::agent
-        AgentVPS[" Agent (VPS)<br/>[Exit Node]<br/>VPN IP: /32"]:::agent
-        
-        AgentA <=="libp2p Stream Tunnel<br/>WireGuard (ChaCha20-Poly1305)<br/>AutoNAT & STUN Hole Punched"==> AgentB
-        AgentA <=="libp2p Stream Tunnel<br/>WireGuard (ChaCha20-Poly1305)<br/>AutoNAT & STUN Hole Punched"==> AgentVPS
-    end
-    
-    INT(( Internet)):::internet
-    
-    %% Relationships & Communication Flows
-    DataPlane == "gRPC + TLS (Optional)<br/>Bootstrap, Config Sync, Heartbeat" ==> ControlPlane
-    ControlPlane -. "Metrics & Telemetry Logs" .-> Observability
-    DataPlane -. "Logs & Trace ID" .-> Observability
-    
-    AgentVPS == "iptables MASQUERADE<br/>IP Forwarding & DNS Resolution" ==> INT
+  OBSERVABILITY STACK:
+  • Prometheus + Grafana (Metrics exported from all services)
+  • Distributed Tracing (x-trace-id context across all layers)
+  • Structured JSON Logging (Zerolog integration)
 ```
 
 ### Control Plane Services
