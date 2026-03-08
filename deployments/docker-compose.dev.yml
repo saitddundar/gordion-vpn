@@ -89,6 +89,8 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-debug}
     env_file:
       - ../.env
+    volumes:
+      - ../certs:/app/certs
     depends_on:
       postgres:
         condition: service_healthy
@@ -110,6 +112,8 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-debug}
     env_file:
       - ../.env
+    volumes:
+      - ../certs:/app/certs
     depends_on:
       redis:
         condition: service_healthy
@@ -131,6 +135,8 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-debug}
     env_file:
       - ../.env
+    volumes:
+      - ../certs:/app/certs
     depends_on:
       redis:
         condition: service_healthy
