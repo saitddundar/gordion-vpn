@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/redis/go-redis/v9"
+	"github.com/saitddundar/gordion-vpn/pkg/metrics"
 )
 
 const (
@@ -89,6 +90,9 @@ func (a *Allocator) AllocateIP(ctx context.Context, nodeID string) (string, erro
 		return "", fmt.Errorf("redis set error: %w", err)
 	}
 
+	count := a.client.SCard(ctx, allocatedSetKey).Val()
+	metrics.AllocatedIPs.Set(float64(count))
+
 	return ipStr, nil
 }
 
@@ -103,6 +107,9 @@ func (a *Allocator) ReleaseIP(ctx context.Context, nodeID string, ipAddress stri
 	if err := a.client.Del(ctx, nodeIPKeyPrefix+nodeID).Err(); err != nil {
 		return fmt.Errorf("redis del error: %w", err)
 	}
+
+	count := a.client.SCard(ctx, allocatedSetKey).Val()
+	metrics.AllocatedIPs.Set(float64(count))
 
 	return nil
 }

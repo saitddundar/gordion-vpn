@@ -36,27 +36,27 @@ Gordion VPN turns participating nodes into both clients and relay peers. It uses
 ┌──────────────────────────────────────────────────────────────┐
 │                       CONTROL PLANE                          │
 │                                                              │
-│  ┌──────────────┐  ┌────────────────┐  ┌────────────────┐   │
-│  │   Identity   │  │   Discovery    │  │     Config     │   │
-│  │   Service    │  │    Service     │  │    Service     │   │
-│  │  PostgreSQL  │  │     Redis      │  │     Redis      │   │
-│  │   JWT Auth   │  │ Peer Registry  │  │ IP Allocator   │   │
-│  └──────────────┘  └────────────────┘  └────────────────┘   │
+│  ┌──────────────┐  ┌────────────────┐  ┌────────────────┐    │
+│  │   Identity   │  │   Discovery    │  │     Config     │    │
+│  │   Service    │  │    Service     │  │    Service     │    │
+│  │  PostgreSQL  │  │     Redis      │  │     Redis      │    │
+│  │   JWT Auth   │  │ Peer Registry  │  │ IP Allocator   │    │
+│  └──────────────┘  └────────────────┘  └────────────────┘    │
 │         ↑                  ↑                   ↑             │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │            Prometheus + Grafana                      │   │
-│  │         Distributed Tracing (trace_id)               │   │
-│  │         Rate Limiting & Health Checks                │   │
-│  └──────────────────────────────────────────────────────┘   │
+│  ┌──────────────────────────────────────────────────────┐    │
+│  │            Prometheus + Grafana                      │    │
+│  │         Distributed Tracing (trace_id)               │    │
+│  │         Rate Limiting & Health Checks                │    │
+│  └──────────────────────────────────────────────────────┘    │
 └──────────────────────────────────────────────────────────────┘
                     ↑ gRPC + TLS (optional) ↑
 ┌──────────────────────────────────────────────────────────────┐
 │                        DATA PLANE                            │
 │                                                              │
-│  ┌──────────┐    libp2p + WireGuard    ┌────────────────┐   │
-│  │  Agent   │◄══════════════════════►  │  Agent (VPS)   │   │
-│  │ (client) │    NAT punched, P2P      │  [exit node]   │   │
-│  └──────────┘                          └────────────────┘   │
+│  ┌──────────┐    libp2p + WireGuard    ┌────────────────┐    │
+│  │  Agent   │◄══════════════════════►  │  Agent (VPS)   │    │
+│  │ (client) │    NAT punched, P2P      │  [exit node]   │    │
+│  └──────────┘                          └────────────────┘    │
 │                                               │              │
 │                           iptables MASQUERADE │              │
 │                                               ▼              │
@@ -175,7 +175,7 @@ The core challenge with P2P VPNs is NAT — two agents behind home routers canno
 │              Agent A                │
 │                                     │
 │  WireGuard TUN ──► Local UDP Sock   │
-│   (10.8.0.2)       (127.0.0.1:X)   │
+│   (10.8.0.2)       (127.0.0.1:X)    │
 │         ▲               │           │
 │         │      Bridge   ▼           │
 │         └────────── libp2p Stream  ─┼──► (over internet, NAT punched)
@@ -185,9 +185,9 @@ The core challenge with P2P VPNs is NAT — two agents behind home routers canno
                                           │                                     │
                                           │  libp2p Stream ──► Local UDP Sock   │
                                           │                     (127.0.0.1:Y)   │
-                                          │                          │           │
-                                          │                          ▼           │
-                                          │              WireGuard TUN           │
+                                          │                          │          │
+                                          │                          ▼          │
+                                          │              WireGuard TUN          │
                                           │               (10.8.0.3)            │
                                           └─────────────────────────────────────┘
 ```
@@ -255,7 +255,7 @@ make build-cli          # produces cli/gordion.exe
 
 ```bash
 # Generate a WireGuard keypair and default config (run once per node)
-gordion init
+gordion init --secret <your_network_secret>
 
 # Edit the generated config to point at your control plane servers
 nano configs/agent.yaml
@@ -278,7 +278,7 @@ gordion up
 | `gordion exit-node off` | Disable exit node routing |
 | `gordion logs [-f] [-n N]` | View or stream agent logs |
 | `gordion doctor` | Run connectivity diagnostics (7 checks) |
-| `gordion init [--force]` | Generate keypair + default config |
+| `gordion init [--secret]` | Generate keypair + default config |
 | `gordion version` | Print version, OS, arch, Go runtime |
 
 **Global flags:**
@@ -395,6 +395,7 @@ The service re-reads the configuration and increments the **Config Version**, wh
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `JWT_SECRET` | (from yaml) | JWT signing secret |
+| `NETWORK_SECRET` | (from yaml) | Registration required password |
 | `DATABASE_URL` | (from yaml) | PostgreSQL connection string |
 | `IDENTITY_ADDR` | `localhost:8001` | Identity service address |
 | `DISCOVERY_ADDR` | `localhost:8002` | Discovery service address |
@@ -405,7 +406,7 @@ The service re-reads the configuration and increments the **Config Version**, wh
 | `IS_EXIT_NODE` | `false` | Run this agent as an exit node |
 | `USE_EXIT_NODE` | `false` | Route internet traffic via exit node |
 | `EXIT_NODE_ID` | `` | Specific exit node ID (empty = auto-select) |
-| `EXIT_NODE_DNS` | `1.1.1.1, 1.0.0.1` | DNS server used when exit node is active |
+| `EXIT_NODE_DNS` | `1.1.1.1, 1.0.0.1` | DNS used when exit node is active |
 | `LOG_LEVEL` | `debug` | Log level (debug, info, warn, error) |
 
 ## Agent Configuration
@@ -449,7 +450,7 @@ exit_node_id: ""
 ### Authentication Flow
 
 ```
-Agent → Identity Service: RegisterNode(public_key)
+Agent → Identity Service: RegisterNode(public_key, network_secret)
                        ← token + node_id
 
 Agent → Config Service: GetConfig(token)
@@ -607,7 +608,7 @@ cd services/agent     && go test -v -count=1 ./test/...
 
 | Method | Request | Response |
 |--------|---------|----------|
-| `RegisterNode` | `public_key`, `version`, `peer_id` | `node_id`, `token`, `expires_at` |
+| `RegisterNode` | `public_key`, `version`, `peer_id`, `network_secret` | `node_id`, `token`, `expires_at` |
 | `ValidateToken` | `token` | `valid`, `node_id` |
 | `GetPublicKey` | `node_id` | `public_key` |
 
@@ -648,7 +649,7 @@ cd services/agent     && go test -v -count=1 ./test/...
 
 ## Development Status
 
-### Completed ✅
+### Completed 
 
 | Sprint | Deliverables |
 |--------|-------------|
@@ -660,18 +661,15 @@ cd services/agent     && go test -v -count=1 ./test/...
 | **Observability** | Prometheus metrics, Grafana, distributed tracing, structured logging, health checks, rate limiting |
 | **Resilience** | Circuit breaker, exponential backoff, token refresh loop, graceful shutdown |
 | **P2P Foundation** | libp2p host per agent (PeerID, Noise), AutoNAT, Hole Punching, CI/CD pipeline |
-| **WireGuard ↔ libp2p Bridge** | `/gordion/wg/1.0.0` protocol, per-peer UDP proxy ports, 2-byte length-prefix framing, race-free stream initiation |
-| **Security Hardening** | gRPC TLS support, WireGuard config 0600 permissions + UserConfigDir, ListPeers authentication, `/32` AllowedIPs, data race fixes (sync.RWMutex) |
-| **Exit Node** | `is_exit_node` flag in Discovery, gateway package (Linux iptables / Windows netsh / macOS pf), client-side exit node selection (auto or by ID), `AllowedIPs = 0.0.0.0/0`, DNS leak protection, cleanup on shutdown |
+| **WireGuard ↔ libp2p Bridge** | `/gordion/wg/1.0.0` protocol, UDP proxy ports, 2-byte length-prefix framing, race-free stream initiation |
+| **Security Hardening** | Custom Network Secret auth, gRPC TLS support, WireGuard configs 0600, ListPeers auth, `/32` AllowedIPs |
+| **Exit Node** | `is_exit_node` flag in Discovery, cross-os gateway package (iptables/netsh/pf), client-side exit node selection, DNS leak protection |
 
-### Planned 🔲
+### Planned 
 
 | Feature | Description |
 |---------|-------------|
-| **CLI** | `gordion up/down/status/peers/exit-node` with interactive TUI |
-| **Invite / Join link** | Single URL to onboard a new peer to the network |
 | **Web Dashboard** | Admin UI: peer management, invite links, exit node status |
-| **Kill switch** | Block all internet traffic if the VPN connection drops |
 
 ## Challenges & Solutions
 

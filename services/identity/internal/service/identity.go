@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/saitddundar/gordion-vpn/pkg/metrics"
 	"github.com/saitddundar/gordion-vpn/services/identity/internal/storage"
 )
 
@@ -28,6 +29,7 @@ func New(storage *storage.Storage, jwtSecret, networkSecret string, tokenDuratio
 
 func (s *IdentityService) RegisterNode(ctx context.Context, publicKey, version, peerID, reqSecret string) (nodeID, token string, expiresAt int64, err error) {
 	if s.networkSecret != "" && reqSecret != s.networkSecret {
+		metrics.AuthFailuresTotal.WithLabelValues("invalid_network_secret").Inc()
 		return "", "", 0, fmt.Errorf("invalid network secret")
 	}
 	node, err := s.storage.CreateNode(ctx, publicKey, version, peerID)
@@ -50,6 +52,8 @@ func (s *IdentityService) RegisterNode(ctx context.Context, publicKey, version, 
 		return "", "", 0, fmt.Errorf("failed to create token: %w", err)
 	}
 
+	metrics.TokensIssuedTotal.Inc()
+
 	return node.ID.String(), tokenString, exp, nil
 }
 
@@ -63,10 +67,12 @@ func (s *IdentityService) ValidateToken(ctx context.Context, tokenString string)
 		return s.jwtSecret, nil
 	})
 	if err != nil {
+		metrics.AuthFailuresTotal.WithLabelValues("invalid_token").Inc()
 		return "", false, nil
 	}
 	claims, ok := token.Claims.(jwt.MapClaims)
 	if !ok || !token.Valid {
+		metrics.AuthFailuresTotal.WithLabelValues("invalid_token").Inc()
 		return "", false, nil
 	}
 	nodeIDStr, ok := claims["node_id"].(string)
@@ -75,9 +81,11 @@ func (s *IdentityService) ValidateToken(ctx context.Context, tokenString string)
 	}
 	tokenRecord, err := s.storage.GetTokenByValue(ctx, tokenString)
 	if err != nil {
+		metrics.AuthFailuresTotal.WithLabelValues("token_not_found").Inc()
 		return "", false, nil
 	}
 	if time.Now().After(tokenRecord.ExpiresAt) {
+		metrics.AuthFailuresTotal.WithLabelValues("expired_token").Inc()
 		return "", false, nil
 	}
 	return nodeIDStr, true, nil

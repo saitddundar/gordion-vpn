@@ -47,4 +47,36 @@ var (
 		},
 		[]string{"service", "operation"},
 	)
+
+	// --- Domain-Specific Business Metrics ---
+
+	ActivePeers = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "gordion_active_peers_total",
+			Help: "Current number of online peers in the VPN network",
+		},
+		[]string{"is_exit_node"},
+	)
+
+	AllocatedIPs = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "gordion_allocated_ips_total",
+			Help: "Total number of IP addresses currently allocated to peers",
+		},
+	)
+
+	TokensIssuedTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "gordion_jwt_tokens_issued_total",
+			Help: "Total number of JWT authentication tokens successfully issued",
+		},
+	)
+
+	AuthFailuresTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "gordion_auth_failures_total",
+			Help: "Total number of failed authentication attempts",
+		},
+		[]string{"reason"}, // e.g., "invalid_network_secret", "expired_token", "invalid_signature"
+	)
 )

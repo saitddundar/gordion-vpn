@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"github.com/saitddundar/gordion-vpn/pkg/metrics"
 )
 
 const (
@@ -141,10 +142,21 @@ func (r *Registry) ListOnlinePeers(ctx context.Context) ([]*Peer, error) {
 		peers = append(peers, peer)
 	}
 
+	// Update Prometheus metrics
+	var normalNodes, exitNodes float64
+	for _, p := range peers {
+		if p.IsExitNode {
+			exitNodes++
+		} else {
+			normalNodes++
+		}
+	}
+	metrics.ActivePeers.WithLabelValues("false").Set(normalNodes)
+	metrics.ActivePeers.WithLabelValues("true").Set(exitNodes)
+
 	return peers, nil
 }
 
-// CleanupStale removes Set members whose Redis key has already expired.
 // Runs even when no one is listing peers, keeping the Set coherent.
 // Should be called periodically with interval ~= HeartbeatTTL.
 func (r *Registry) CleanupStale(ctx context.Context) (int, error) {
