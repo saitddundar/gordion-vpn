@@ -112,8 +112,8 @@ flowchart TB
     
     %% Relationships & Communication Flows
     DataPlane == "gRPC + TLS (Optional)<br/>Bootstrap, Config Sync, Heartbeat" ==> ControlPlane
-    ControlPlane -.- "Metrics & Telemetry Logs" -.- Observability
-    DataPlane -.- "Logs & Trace ID" -.- Observability
+    ControlPlane -. "Metrics & Telemetry Logs" .-> Observability
+    DataPlane -. "Logs & Trace ID" .-> Observability
     
     AgentVPS == "iptables MASQUERADE<br/>IP Forwarding & DNS Resolution" ==> INT
 ```
