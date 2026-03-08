@@ -11,4 +11,5 @@ log_level: "debug"
 
 # JWT  TODO : (override with JWT_SECRET env var in production) 
 jwt_secret: "CHANGE_ME_IN_PRODUCTION"
+network_secret: "gordion_secret_key"
 token_duration_hours: 24

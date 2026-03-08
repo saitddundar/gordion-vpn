@@ -18,9 +18,10 @@ service IdentityService {
 
 // RegisterNode Messages
 message RegisterNodeRequest {
-  string public_key = 1;  // Node's Ed25519 public key (hex format)
-  string version = 2;     // Agent version
-  string peer_id = 3;     // libp2p peer identity
+  string public_key = 1;      // Node's Ed25519 public key (hex format)
+  string version = 2;         // Agent version
+  string peer_id = 3;         // libp2p peer identity
+  string network_secret = 4;  // Secret token to authorize joining the network
 }
 
 message RegisterNodeResponse {

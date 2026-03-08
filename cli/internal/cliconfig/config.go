@@ -12,6 +12,7 @@ type Config struct {
 	IdentityAddr  string `yaml:"identity_addr"`
 	DiscoveryAddr string `yaml:"discovery_addr"`
 	ConfigAddr    string `yaml:"config_addr"`
+	NetworkSecret string `yaml:"network_secret"`
 	TLSCACert     string `yaml:"tls_ca_cert"`
 	LogLevel      string `yaml:"log_level"`
 	DryRun        *bool  `yaml:"dry_run"`

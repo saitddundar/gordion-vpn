@@ -24,9 +24,10 @@ const (
 // RegisterNode Messages
 type RegisterNodeRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	PublicKey     string                 `protobuf:"bytes,1,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"` // Node's Ed25519 public key (hex format)
-	Version       string                 `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`                      // Agent version
-	PeerId        string                 `protobuf:"bytes,3,opt,name=peer_id,json=peerId,proto3" json:"peer_id,omitempty"`          // libp2p peer identity
+	PublicKey     string                 `protobuf:"bytes,1,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"`             // Node's Ed25519 public key (hex format)
+	Version       string                 `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`                                  // Agent version
+	PeerId        string                 `protobuf:"bytes,3,opt,name=peer_id,json=peerId,proto3" json:"peer_id,omitempty"`                      // libp2p peer identity
+	NetworkSecret string                 `protobuf:"bytes,4,opt,name=network_secret,json=networkSecret,proto3" json:"network_secret,omitempty"` // Secret token to authorize joining the network
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -78,6 +79,13 @@ func (x *RegisterNodeRequest) GetVersion() string {
 func (x *RegisterNodeRequest) GetPeerId() string {
 	if x != nil {
 		return x.PeerId
+	}
+	return ""
+}
+
+func (x *RegisterNodeRequest) GetNetworkSecret() string {
+	if x != nil {
+		return x.NetworkSecret
 	}
 	return ""
 }
@@ -332,12 +340,13 @@ var File_identity_v1_identity_proto protoreflect.FileDescriptor
 
 const file_identity_v1_identity_proto_rawDesc = "" +
 	"\n" +
-	"\x1aidentity/v1/identity.proto\x12\videntity.v1\"g\n" +
+	"\x1aidentity/v1/identity.proto\x12\videntity.v1\"\x8e\x01\n" +
 	"\x13RegisterNodeRequest\x12\x1d\n" +
 	"\n" +
 	"public_key\x18\x01 \x01(\tR\tpublicKey\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\tR\aversion\x12\x17\n" +
-	"\apeer_id\x18\x03 \x01(\tR\x06peerId\"d\n" +
+	"\apeer_id\x18\x03 \x01(\tR\x06peerId\x12%\n" +
+	"\x0enetwork_secret\x18\x04 \x01(\tR\rnetworkSecret\"d\n" +
 	"\x14RegisterNodeResponse\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x14\n" +
 	"\x05token\x18\x02 \x01(\tR\x05token\x12\x1d\n" +

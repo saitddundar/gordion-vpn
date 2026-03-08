@@ -19,12 +19,12 @@ type Config struct {
 	WireGuardPort    int    `yaml:"wireguard_port"`
 	P2PPort          int    `yaml:"p2p_port"`
 	TLSCACert        string `yaml:"tls_ca_cert"`
+	NetworkSecret    string `yaml:"network_secret"`
 
-	// Exit node configuration
-	IsExitNode  bool   `yaml:"is_exit_node"`  // this peer routes internet traffic for others
-	UseExitNode bool   `yaml:"use_exit_node"` // route all internet traffic through an exit node
-	ExitNodeID  string `yaml:"exit_node_id"`  // specific exit node to use (empty = auto-select)
-	ExitNodeDNS string `yaml:"exit_node_dns"` // DNS server to use when exit node is active (prevents DNS leaks)
+	IsExitNode  bool   `yaml:"is_exit_node"`
+	UseExitNode bool   `yaml:"use_exit_node"`
+	ExitNodeID  string `yaml:"exit_node_id"`
+	ExitNodeDNS string `yaml:"exit_node_dns"`
 }
 
 func Load(path string) (*Config, error) {
@@ -100,6 +100,9 @@ func (c *Config) overrideFromEnv() {
 	}
 	if v := os.Getenv("TLS_CA_CERT"); v != "" {
 		c.TLSCACert = v
+	}
+	if v := os.Getenv("NETWORK_SECRET"); v != "" {
+		c.NetworkSecret = v
 	}
 	if v := os.Getenv("IS_EXIT_NODE"); v == "true" {
 		c.IsExitNode = true

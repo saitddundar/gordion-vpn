@@ -476,7 +476,7 @@ func (a *Agent) syncPeers(ctx context.Context, networkCIDR string) {
 func (a *Agent) retryRegister(ctx context.Context, publicKey string) (string, string, int64, error) {
 	maxRetries := 5
 	for i := 0; i < maxRetries; i++ {
-		nodeID, token, expiresAt, err := a.client.Register(ctx, publicKey, a.p2p_mgr.PeerID())
+		nodeID, token, expiresAt, err := a.client.Register(ctx, publicKey, a.p2p_mgr.PeerID(), a.cfg.NetworkSecret)
 		if err == nil {
 			return nodeID, token, expiresAt, nil
 		}

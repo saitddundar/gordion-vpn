@@ -97,14 +97,15 @@ func (c *Client) Close() {
 	c.configConn.Close()
 }
 
-func (c *Client) Register(ctx context.Context, publicKey, peerID string) (nodeID, token string, expiresAt int64, err error) {
+func (c *Client) Register(ctx context.Context, publicKey, peerID, networkSecret string) (nodeID, token string, expiresAt int64, err error) {
 	var resp *identityv1.RegisterNodeResponse
 	err = c.cbIdentity.Execute(func() error {
 		var e error
 		resp, e = c.identity.RegisterNode(ctx, &identityv1.RegisterNodeRequest{
-			PublicKey: publicKey,
-			Version:   "1.0.0",
-			PeerId:    peerID,
+			PublicKey:     publicKey,
+			Version:       "1.0.0",
+			PeerId:        peerID,
+			NetworkSecret: networkSecret,
 		})
 		return e
 	})

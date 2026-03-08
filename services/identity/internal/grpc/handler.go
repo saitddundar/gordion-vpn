@@ -30,7 +30,7 @@ func (h *IdentityHandler) RegisterNode(ctx context.Context, req *identityv1.Regi
 	if req.Version == "" {
 		return nil, status.Error(codes.InvalidArgument, "version is required")
 	}
-	nodeID, token, expiresAt, err := h.service.RegisterNode(ctx, req.PublicKey, req.Version, req.PeerId)
+	nodeID, token, expiresAt, err := h.service.RegisterNode(ctx, req.PublicKey, req.Version, req.PeerId, req.NetworkSecret)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to register node: %v", err)
 	}

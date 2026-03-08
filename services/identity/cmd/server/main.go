@@ -47,7 +47,7 @@ func main() {
 	defer store.Close()
 	logger.Info("Database connection established")
 
-	identityService := service.New(store, cfg.JWTSecret, cfg.TokenDuration)
+	identityService := service.New(store, cfg.JWTSecret, cfg.NetworkSecret, cfg.TokenDuration)
 	logger.Info("Identity service initialized")
 
 	handler := grpchandler.NewIdentityHandler(identityService)

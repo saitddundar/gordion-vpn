@@ -10,22 +10,26 @@ import (
 )
 
 type IdentityService struct {
-	storage   *storage.Storage
-	jwtSecret []byte
-	tokenTTL  time.Duration
+	storage       *storage.Storage
+	jwtSecret     []byte
+	networkSecret string
+	tokenTTL      time.Duration
 }
 
 // identity service
-func New(storage *storage.Storage, jwtSecret string, tokenDurationHours int) *IdentityService {
+func New(storage *storage.Storage, jwtSecret, networkSecret string, tokenDurationHours int) *IdentityService {
 	return &IdentityService{
-		storage:   storage,
-		jwtSecret: []byte(jwtSecret),
-		tokenTTL:  time.Duration(tokenDurationHours) * time.Hour,
+		storage:       storage,
+		jwtSecret:     []byte(jwtSecret),
+		networkSecret: networkSecret,
+		tokenTTL:      time.Duration(tokenDurationHours) * time.Hour,
 	}
 }
 
-func (s *IdentityService) RegisterNode(ctx context.Context, publicKey, version, peerID string) (nodeID, token string, expiresAt int64, err error) {
-
+func (s *IdentityService) RegisterNode(ctx context.Context, publicKey, version, peerID, reqSecret string) (nodeID, token string, expiresAt int64, err error) {
+	if s.networkSecret != "" && reqSecret != s.networkSecret {
+		return "", "", 0, fmt.Errorf("invalid network secret")
+	}
 	node, err := s.storage.CreateNode(ctx, publicKey, version, peerID)
 	if err != nil {
 		return "", "", 0, fmt.Errorf("failed to create node: %w", err)

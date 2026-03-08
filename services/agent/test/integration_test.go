@@ -37,7 +37,7 @@ func TestAgentFlow(t *testing.T) {
 	t.Run("Register", func(t *testing.T) {
 		kp, _ := wireguard.GenerateKeyPair()
 		var expiresAt int64
-		nodeID, token, expiresAt, err = c.Register(ctx, kp.PublicKey, "test-peer-id")
+		nodeID, token, expiresAt, err = c.Register(ctx, kp.PublicKey, "test-peer-id", "")
 		if err != nil {
 			t.Fatalf("Register failed: %v", err)
 		}

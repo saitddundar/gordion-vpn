@@ -17,6 +17,7 @@ type Config struct {
 
 	JWTSecret     string `yaml:"jwt_secret"`
 	TokenDuration int    `yaml:"token_duration_hours"`
+	NetworkSecret string `yaml:"network_secret"`
 }
 
 // Load loads configuration from file
@@ -55,6 +56,10 @@ func LoadFromEnv(path string) (*Config, error) {
 
 	if jwtSecret := os.Getenv("JWT_SECRET"); jwtSecret != "" {
 		cfg.JWTSecret = jwtSecret
+	}
+
+	if networkSecret := os.Getenv("NETWORK_SECRET"); networkSecret != "" {
+		cfg.NetworkSecret = networkSecret
 	}
 
 	return cfg, nil
