@@ -539,6 +539,10 @@ All services expose Prometheus metrics on dedicated HTTP ports.
 | `gordion_active_connections` | Active connections per service |
 | `gordion_db_queries_total` | Database query count |
 | `gordion_db_query_duration_seconds` | Database query latency |
+| `gordion_active_peers_total` | **[Domain]** Current number of online peers in VPN |
+| `gordion_allocated_ips_total` | **[Domain]** Total number of IPs assigned to peers |
+| `gordion_jwt_tokens_issued_total` | **[Domain]** Successful node registration count |
+| `gordion_auth_failures_total` | **[Domain]** Failed auth attempts (wrong secret/token) |
 
 ### Distributed Tracing
 
