@@ -9,7 +9,6 @@ import (
 	"google.golang.org/grpc/credentials"
 )
 
-// ServerCredentials loads TLS credentials for a gRPC server
 func ServerCredentials(certFile, keyFile string) (credentials.TransportCredentials, error) {
 	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
@@ -24,7 +23,6 @@ func ServerCredentials(certFile, keyFile string) (credentials.TransportCredentia
 	return credentials.NewTLS(config), nil
 }
 
-// ClientCredentials loads TLS credentials for a gRPC client
 func ClientCredentials(caFile string) (credentials.TransportCredentials, error) {
 	caCert, err := os.ReadFile(caFile)
 	if err != nil {

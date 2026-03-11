@@ -1,3 +1,6 @@
+# Discovery Service Configuration
+
+
 grpc_port: 8002
 redis_url: "localhost:6379"
 log_level: "debug"

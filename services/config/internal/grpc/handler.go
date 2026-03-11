@@ -47,7 +47,6 @@ func (h *ConfigHandler) GetConfig(ctx context.Context, req *configv1.GetConfigRe
 		return nil, status.Errorf(codes.Unauthenticated, "auth failed: %v", err)
 	}
 
-	// Snapshot config under read-lock
 	h.cfgMu.RLock()
 	version := h.configVersion
 	cidr := h.networkCIDR
