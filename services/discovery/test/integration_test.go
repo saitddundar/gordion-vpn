@@ -2,6 +2,7 @@ package test
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"google.golang.org/grpc"
@@ -11,6 +12,13 @@ import (
 	discoveryv1 "github.com/saitddundar/gordion-vpn/pkg/proto/discovery/v1"
 	identityv1 "github.com/saitddundar/gordion-vpn/pkg/proto/identity/v1"
 )
+
+func getNetworkSecret() string {
+	if s := os.Getenv("NETWORK_SECRET"); s != "" {
+		return s
+	}
+	return "gordion_secret_key" // matches configs/identity.dev.yaml default
+}
 
 // getTestToken registers a node with Identity Service and returns a valid JWT.
 func getTestToken(t *testing.T) string {
@@ -24,9 +32,10 @@ func getTestToken(t *testing.T) string {
 
 	client := identityv1.NewIdentityServiceClient(conn)
 	resp, err := client.RegisterNode(context.Background(), &identityv1.RegisterNodeRequest{
-		PublicKey: "dGVzdHB1YmxpY2tleWZvcmRpc2NvdmVyeXRlc3Q=", // base64 test key
-		Version:   "test",
-		PeerId:    "discovery-test-peer",
+		PublicKey:     "dGVzdHB1YmxpY2tleWZvcmRpc2NvdmVyeXRlc3Q=", // base64 test key
+		Version:       "test",
+		PeerId:        "discovery-test-peer",
+		NetworkSecret: getNetworkSecret(),
 	})
 	if err != nil {
 		t.Fatalf("RegisterNode (for token): %v", err)
