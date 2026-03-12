@@ -11,7 +11,7 @@ import (
 )
 
 func TestConfigService(t *testing.T) {
-	conn, err := grpc.Dial("localhost:8003", grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient("localhost:8003", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatalf("Failed to connect: %v", err)
 	}

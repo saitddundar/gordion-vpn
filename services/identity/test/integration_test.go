@@ -20,7 +20,7 @@ func getNetworkSecret() string {
 
 func TestIdentityService(t *testing.T) {
 	// Connect to running service
-	conn, err := grpc.Dial("localhost:8001", grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient("localhost:8001", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatalf("Failed to connect: %v", err)
 	}

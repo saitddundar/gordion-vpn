@@ -2,6 +2,7 @@ package test
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"google.golang.org/grpc"
@@ -12,11 +13,18 @@ import (
 	identityv1 "github.com/saitddundar/gordion-vpn/pkg/proto/identity/v1"
 )
 
+func getNetworkSecret() string {
+	if s := os.Getenv("NETWORK_SECRET"); s != "" {
+		return s
+	}
+	return "gordion_secret_key"
+}
+
 // getTestToken registers a node with Identity Service and returns a valid JWT.
 func getTestToken(t *testing.T) string {
 	t.Helper()
 
-	conn, err := grpc.Dial("localhost:8001", grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient("localhost:8001", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatalf("connect to Identity: %v", err)
 	}
@@ -24,9 +32,10 @@ func getTestToken(t *testing.T) string {
 
 	client := identityv1.NewIdentityServiceClient(conn)
 	resp, err := client.RegisterNode(context.Background(), &identityv1.RegisterNodeRequest{
-		PublicKey: "dGVzdHB1YmxpY2tleWZvcmRpc2NvdmVyeXRlc3Q=", // base64 test key
-		Version:   "test",
-		PeerId:    "discovery-test-peer",
+		PublicKey:     "dGVzdHB1YmxpY2tleWZvcmRpc2NvdmVyeXRlc3Q=", // base64 test key
+		Version:       "test",
+		PeerId:        "discovery-test-peer",
+		NetworkSecret: getNetworkSecret(),
 	})
 	if err != nil {
 		t.Fatalf("RegisterNode (for token): %v", err)
@@ -38,7 +47,7 @@ func TestDiscoveryService(t *testing.T) {
 	// Step 0: get a real JWT from Identity Service
 	token := getTestToken(t)
 
-	conn, err := grpc.Dial("localhost:8002", grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient("localhost:8002", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatalf("Failed to connect: %v", err)
 	}
