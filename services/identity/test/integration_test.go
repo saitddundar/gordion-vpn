@@ -2,6 +2,7 @@ package test
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"google.golang.org/grpc"
@@ -9,6 +10,13 @@ import (
 
 	identityv1 "github.com/saitddundar/gordion-vpn/pkg/proto/identity/v1"
 )
+
+func getNetworkSecret() string {
+	if s := os.Getenv("NETWORK_SECRET"); s != "" {
+		return s
+	}
+	return "gordion_secret_key" // matches configs/identity.dev.yaml default
+}
 
 func TestIdentityService(t *testing.T) {
 	// Connect to running service
@@ -24,8 +32,9 @@ func TestIdentityService(t *testing.T) {
 	// Test: Register Node
 	t.Run("RegisterNode", func(t *testing.T) {
 		resp, err := client.RegisterNode(ctx, &identityv1.RegisterNodeRequest{
-			PublicKey: "test_public_key_abc123",
-			Version:   "1.0.0",
+			PublicKey:     "test_public_key_abc123",
+			Version:       "1.0.0",
+			NetworkSecret: getNetworkSecret(),
 		})
 		if err != nil {
 			t.Fatalf("RegisterNode failed: %v", err)

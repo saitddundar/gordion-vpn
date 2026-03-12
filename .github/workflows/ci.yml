@@ -78,6 +78,7 @@ jobs:
       REDIS_URL: localhost:6379
       JWT_SECRET: ci_test_secret_key_for_testing_only
       JWT_DURATION_HOURS: "1"
+      NETWORK_SECRET: ci_test_network_secret
 
     steps:
       - uses: actions/checkout@v4
@@ -104,7 +105,7 @@ jobs:
           echo "Identity service started"
         env:
           GRPC_PORT: "8001"
-          DB_URL: postgres://gordion:dev_password_123@localhost:5432/gordion?sslmode=disable
+          DATABASE_URL: postgres://gordion:dev_password_123@localhost:5432/gordion?sslmode=disable
 
       - name: Start Discovery Service
         run: |
