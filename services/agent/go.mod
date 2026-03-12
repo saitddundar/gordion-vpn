@@ -1,6 +1,8 @@
 module github.com/saitddundar/gordion-vpn/services/agent
 
-go 1.25.4
+go 1.24.6
+
+toolchain go1.24.13
 
 require (
 	github.com/libp2p/go-libp2p v0.47.0

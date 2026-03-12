@@ -17,7 +17,7 @@ func getNetworkSecret() string {
 	if s := os.Getenv("NETWORK_SECRET"); s != "" {
 		return s
 	}
-	return "gordion_secret_key"
+	return "gordion_secret_key" // matches configs/identity.dev.yaml default
 }
 
 // getTestToken registers a node with Identity Service and returns a valid JWT.
