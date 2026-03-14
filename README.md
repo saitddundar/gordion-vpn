@@ -4,7 +4,7 @@
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Status](https://img.shields.io/badge/status-active--development-orange)](#development-status)
 [![CI](https://github.com/saitddundar/gordion-vpn/actions/workflows/ci.yml/badge.svg)](https://github.com/saitddundar/gordion-vpn/actions)
-[![Views](https://visitor-badge.laobi.icu/badge?page_id=saitddundar.gordion-vpn&left_color=555555&right_color=00ADD8&left_text=Views)](https://github.com/saitddundar/gordion-vpn)
+[![Views](https://visitor-badge.laobi.icu/badge?page_id=saitddundar.gordion-vpn&left_color=555555&right_color=003580&left_text=Views)](https://github.com/saitddundar/gordion-vpn)
 
 A self-hosted, peer-to-peer mesh VPN built with Go. Connects devices securely across NAT boundaries using WireGuard tunnels transported over libp2p — with optional exit node support for internet privacy.
 
